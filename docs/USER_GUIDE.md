@@ -38,6 +38,45 @@ metric totals behind each status value, the trips crediting toward the program
 this year (click **Edit** to jump straight to a trip), card-earnings entries, year
 adjustments, and the tier table.
 
+### Trip attention lists
+
+Above the program cards the dashboard shows two compact trip lists so nothing slips
+through the cracks:
+
+- **Needs Update — Past Trips Not Marked Complete.** Any trip whose dates have
+  already passed but is still marked **planned** or **booked**. These are usually
+  trips you took and simply haven't marked *completed* yet (or need to correct).
+  They're sorted oldest-first. Click **Edit** on any row to open that exact trip in
+  the Trips editor, change its status to *completed* (and adjust the earned metrics
+  if needed), and save. When there's nothing outstanding you'll see a small
+  "All past trips are up to date ✓" note instead.
+- **Upcoming Trips.** Planned and booked trips still to come, soonest-first, with a
+  badge marking each as *planned* or *booked*. **Edit** jumps to the trip the same
+  way.
+
+> **To fix an overdue trip:** find it in the **Needs Update** list, click **Edit**,
+> flip its status to **completed**, and save — it drops off the list immediately.
+
+### Viewing a different year
+
+The **year toggle** in the top-right lets you view the dashboard for **last year**,
+**this year** (the default), or **next year**. Selecting a year re-computes
+*everything* — the program status cards and both trip lists — as if you were looking
+at the app from that year. Your choice is remembered in the address bar, so it
+sticks as you move between pages.
+
+Two things are worth knowing:
+
+- **Projections** for a selected year are shown as if today were December 31 of that
+  year, so a program's status year (including American's March–February window)
+  resolves to the right period.
+- **The two trip lists are always judged against today's real date.** Only the
+  year filter and the projection math move with the toggle. That means viewing
+  **next year** correctly lists a not-yet-taken trip as *upcoming* (never
+  *overdue*), and viewing **last year** shows the trips from that year that were
+  never marked complete. A banner reminds you whenever you're not viewing the live
+  current year.
+
 ## Editing your status (overrides & lifetime status)
 
 Sometimes the tier the app calculates from your tracked activity isn't the whole

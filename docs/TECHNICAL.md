@@ -101,6 +101,39 @@ program-year it belongs to (trips by `start_date`, adjustments by
 `currentTotals`/`currentTier` are retained as aliases of the YTD values for
 backward compatibility with v1.0.0 consumers and tests.
 
+## Dashboard year view & trip attention lists (v1.3)
+
+`computeProjections(db, today = new Date())` already keys the "current"
+program-year off a supplied `today`. The dashboard year toggle reuses that lever
+rather than adding any new projection path:
+
+- `projection:all` (IPC) accepts an optional `viewYear?: number`. `main.ts` maps it
+  through `viewYearToDate(viewYear)` before calling `computeProjections`.
+- **`viewYearToDate(viewYear, now?)`** (in `rules.ts`, pure/dependency-free):
+  returns the real `now` when `viewYear` is `null`/`undefined`/non-finite (so the
+  default "live" view is byte-for-byte unchanged), otherwise `Date.UTC(y, 11, 31)`
+  (Dec 31) with `y` truncated and clamped to `[MIN_VIEW_YEAR, MAX_VIEW_YEAR]`
+  (2000–2100). Anchoring to Dec 31 makes `currentProgramYear` resolve to the
+  selected year for **both** `calendar` and `aa_status_year` programs. It never
+  throws on garbage input — the validation suite exercises `NaN`/`±Infinity`/
+  strings/absurd magnitudes.
+- The **two trip lists** are computed client-side in `Dashboard.tsx` from
+  `trips.getAll()` via **`selectDashboardTrips(trips, viewYear, now)`** (also pure,
+  in `rules.ts`). It filters to trips whose `start_date` **calendar** year equals
+  `viewYear`, then classifies each with **`classifyTripByDate(trip, now)`** using
+  the **real `now`** (never the simulated view date):
+  - `completed` → `neither`.
+  - `end_date ?? start_date` before today → `overdue` (feeds *Needs Update*).
+  - `start_date` today-or-later → `upcoming` (feeds *Upcoming Trips*).
+  - otherwise (in-progress) → `neither`.
+  `needsUpdate` sorts oldest-first, `upcoming` soonest-first. This is the core
+  invariant: **the real current date drives overdue/upcoming; `viewYear` drives
+  only the calendar-year filter and the projection calculation.**
+- The selected year is persisted in the URL `?year=` param via `useSearchParams`;
+  the client clamps it to `[realCurrentYear−1, realCurrentYear+1]` for the toggle
+  and passes `undefined` (not the year) when viewing the live current year.
+- Both lists reuse the existing Trips `?edit=<tripId>` deep link — no new endpoint.
+
 ## Seed data conversion
 
 `scripts/convert_seed.py` parses the original spreadsheet dump
@@ -164,16 +197,23 @@ Vitest, four node-environment suites:
 - **validation** — required fields, CHECK constraints, airport lookups, JSON
   import schema/version, export→import round-trip.
 - **boundary** — zero/negative/missing metrics, AA Feb 28/29 & Mar 1 boundaries,
-  leap years, empty DB, one-tier-away, very large totals.
+  leap years, empty DB, one-tier-away, very large totals, `classifyTripByDate`
+  edge dates (day-before/on/day-after today, in-progress, `end_date`-driven), and
+  `viewYearToDate` clamping (min/max/fractional/Dec-31 mapping).
 - **functionality** — CRUD, projection correctness, airmile spot checks,
   fresh-DB seeding (reference/rules present, zero historical trips),
   non-destructive re-seed of an existing populated DB, rule-version management,
   quarterly due-date logic, card-earnings CRUD + YTD/Projected wiring,
   lifetime-status floor, three-part status separation, Delta lifetime-mileage
   accrual, Marriott/Hyatt rule confirmation, MAX-precedence current-tier
-  resolution across all present/absent combinations, and the AA Executive
-  Platinum permanent-lifetime regression fixture.
+  resolution across all present/absent combinations, the AA Executive
+  Platinum permanent-lifetime regression fixture, and the v1.3 dashboard year-view
+  (synthetic `today` projection for both year types incl. an AA status-year
+  boundary crossing; `selectDashboardTrips` restricting to the selected calendar
+  year while classifying against the real `now`; the "viewing next year → future
+  trip is upcoming not overdue" case and its last-year mirror; legitimately-empty
+  sections).
 
-102 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2), all passing.
+125 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2, 23 for v1.3), all passing.
 
 The portable JSON payload is at `APP_FILE_VERSION = 3` (adds `status_overrides`).

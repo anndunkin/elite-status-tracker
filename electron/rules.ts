@@ -1,4 +1,4 @@
-import type { TierRequirement, YearType } from './types';
+import type { TierRequirement, YearType, TripStatus } from './types';
 
 export type Totals = Record<string, number>;
 
@@ -70,6 +70,77 @@ export function currentProgramYear(today: Date, yearType: YearType): number {
 
 export function isLeapYear(year: number): boolean {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+// ─── Dashboard year-view helpers ────────────────────────────────────────────────
+
+export const MIN_VIEW_YEAR = 2000;
+export const MAX_VIEW_YEAR = 2100;
+
+/**
+ * Resolve the synthetic "today" used to anchor a dashboard year-view.
+ * - Omitted/null/non-finite viewYear → the real `now` (default behavior, unchanged).
+ * - A finite viewYear is truncated to an integer and clamped to [MIN,MAX]_VIEW_YEAR,
+ *   then mapped to Dec 31 (UTC) of that year so every program's currentProgramYear —
+ *   calendar AND aa_status_year — resolves to that year. Never throws.
+ */
+export function viewYearToDate(viewYear: number | null | undefined, now: Date = new Date()): Date {
+  if (viewYear === null || viewYear === undefined) return now;
+  if (typeof viewYear !== 'number' || !Number.isFinite(viewYear)) return now;
+  const y = Math.min(MAX_VIEW_YEAR, Math.max(MIN_VIEW_YEAR, Math.trunc(viewYear)));
+  return new Date(Date.UTC(y, 11, 31));
+}
+
+/** Calendar year of an ISO date (YYYY-MM-DD or full ISO), interpreted in UTC. */
+export function calendarYearOf(dateISO: string): number {
+  return new Date(dateISO + (dateISO.length <= 10 ? 'T00:00:00Z' : '')).getUTCFullYear();
+}
+
+export type DashboardBucket = 'overdue' | 'upcoming' | 'neither';
+
+export interface DashboardTripLike {
+  start_date: string;
+  end_date?: string | null;
+  status: TripStatus;
+}
+
+/**
+ * Classify a trip relative to the REAL current date `now` (never the simulated
+ * year-view date). A completed trip is never overdue/upcoming. The "past" test
+ * uses `end_date ?? start_date` (the most conservative, latest date), so a trip
+ * still in progress (started, not yet ended) is neither overdue nor upcoming.
+ */
+export function classifyTripByDate(trip: DashboardTripLike, now: Date): DashboardBucket {
+  if (trip.status === 'completed') return 'neither';
+  const todayISO = now.toISOString().slice(0, 10);
+  const startISO = trip.start_date.slice(0, 10);
+  const endISO = (trip.end_date ?? trip.start_date).slice(0, 10);
+  if (endISO < todayISO) return 'overdue';    // whole trip is in the past, not marked complete
+  if (startISO >= todayISO) return 'upcoming'; // starts today or later
+  return 'neither';                            // in progress
+}
+
+/**
+ * Split trips into the two dashboard sections for a given viewYear. The
+ * overdue/upcoming decision always uses the REAL `now`; viewYear only restricts
+ * the result to trips whose start_date calendar year equals viewYear. Both lists
+ * are sorted oldest-first by start_date.
+ */
+export function selectDashboardTrips<T extends DashboardTripLike>(
+  trips: T[], viewYear: number, now: Date,
+): { needsUpdate: T[]; upcoming: T[] } {
+  const needsUpdate: T[] = [];
+  const upcoming: T[] = [];
+  for (const t of trips) {
+    if (calendarYearOf(t.start_date) !== viewYear) continue;
+    const bucket = classifyTripByDate(t, now);
+    if (bucket === 'overdue') needsUpdate.push(t);
+    else if (bucket === 'upcoming') upcoming.push(t);
+  }
+  const byStart = (a: T, b: T) => a.start_date.localeCompare(b.start_date);
+  needsUpdate.sort(byStart);
+  upcoming.sort(byStart);
+  return { needsUpdate, upcoming };
 }
 
 /** Sum a list of metric maps into a single totals map. */

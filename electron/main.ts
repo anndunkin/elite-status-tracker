@@ -17,6 +17,7 @@ import type {
   ProgramLifetimeStatus, CardEarningInput, CardEarningUpdate, ProgramStatusOverrideInput,
 } from './types';
 import { haversineMiles, lookupAirport } from './airports';
+import { viewYearToDate } from './rules';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -134,7 +135,8 @@ ipcMain.handle('trips:delete', (_e, id: number) => tripDelete(getDatabase(), id)
 
 // ─── Projection & adjustments ───────────────────────────────────────────────────
 
-ipcMain.handle('projection:all', () => computeProjections(getDatabase()));
+ipcMain.handle('projection:all', (_e, viewYear?: number) =>
+  computeProjections(getDatabase(), viewYearToDate(viewYear)));
 ipcMain.handle('adjustments:all', () => adjustmentsGetAll(getDatabase()));
 
 // ─── Lifetime status / mileage ───────────────────────────────────────────────────

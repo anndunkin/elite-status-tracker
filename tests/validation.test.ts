@@ -6,6 +6,7 @@ import {
   statusOverrideSet, statusOverridesGetAll, statusOverrideClear,
 } from '../electron/database';
 import { lookupAirport, haversineMiles } from '../electron/airports';
+import { viewYearToDate } from '../electron/rules';
 import { APP_FILE_VERSION } from '../electron/types';
 
 describe('trip field validation', () => {
@@ -79,6 +80,28 @@ describe('airport validation', () => {
   it('distance is null when either endpoint is unknown', () => {
     expect(haversineMiles('SEA', 'ZZZ')).toBeNull();
     expect(haversineMiles('', 'SEA')).toBeNull();
+  });
+});
+
+describe('dashboard viewYear validation (never throws, always yields a usable date)', () => {
+  const now = new Date('2026-07-15T00:00:00Z');
+  it('falls back to real now for non-numeric / non-finite input', () => {
+    expect(viewYearToDate(NaN, now)).toBe(now);
+    expect(viewYearToDate(Infinity, now)).toBe(now);
+    expect(viewYearToDate(-Infinity, now)).toBe(now);
+    expect(viewYearToDate('2027' as unknown as number, now)).toBe(now);
+  });
+  it('clamps an absurd far-future or far-past year into range without throwing', () => {
+    expect(() => viewYearToDate(9_999_999, now)).not.toThrow();
+    expect(viewYearToDate(9_999_999, now).getUTCFullYear()).toBe(2100);
+    expect(viewYearToDate(-9_999_999, now).getUTCFullYear()).toBe(2000);
+  });
+  it('always returns a valid Date object', () => {
+    for (const v of [null, undefined, NaN, 0, 2026, 2027.9, 1e9]) {
+      const d = viewYearToDate(v as number, now);
+      expect(d instanceof Date).toBe(true);
+      expect(Number.isNaN(d.getTime())).toBe(false);
+    }
   });
 });
 

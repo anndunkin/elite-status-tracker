@@ -3,6 +3,32 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-07-22
+
+### Added
+- **Dashboard "Needs Update" section.** Surfaces past trips that are still marked
+  *planned* or *booked* even though their dates have passed — the trips you most
+  likely need to mark complete (or adjust). Sorted oldest-first, each with an
+  **Edit** action that jumps straight to that trip in the Trips editor. When there
+  is nothing to reconcile, a small "All past trips are up to date" confirmation is
+  shown instead of an empty panel.
+- **Dashboard "Upcoming Trips" section.** Lists planned/booked trips still to come,
+  soonest-first, with a status badge distinguishing *planned* from *booked* and the
+  same one-click **Edit** action.
+- **Dashboard year toggle.** A segmented control offers *last year*, *this year
+  (default)*, and *next year*, labelled with the real calendar years. Selecting a
+  year re-runs the entire dashboard — both the program-status cards and the two
+  trip sections — as if viewed from that year, and the choice is remembered in the
+  URL (`?year=`) so it survives navigation. A banner appears when you are not
+  viewing the live current year.
+  - **Projections** for the chosen year are computed as if today were Dec 31 of
+    that year, so the current program-year resolves correctly for both calendar
+    and AA (Mar 1–Feb) status-year programs.
+  - **The "Needs Update" and "Upcoming" classifications always use today's real
+    date** — only the calendar-year filter and the projection math shift with the
+    selected year. Viewing *next year* correctly shows a not-yet-happened trip as
+    *upcoming* rather than *overdue*; the mirror holds for *last year*.
+
 ## [1.2.0] — 2026-07-22
 
 ### Changed

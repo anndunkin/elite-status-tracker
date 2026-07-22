@@ -311,7 +311,7 @@ export interface WindowApi {
     delete: (id: number) => Promise<boolean>;
   };
   projection: {
-    all: () => Promise<ProgramProjection[]>;
+    all: (viewYear?: number) => Promise<ProgramProjection[]>;
   };
   adjustments: {
     all: () => Promise<ProgramYearAdjustment[]>;

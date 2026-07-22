@@ -18,7 +18,7 @@ const api: WindowApi = {
     delete: (id) => ipcRenderer.invoke('trips:delete', id),
   },
   projection: {
-    all: () => ipcRenderer.invoke('projection:all'),
+    all: (viewYear) => ipcRenderer.invoke('projection:all', viewYear),
   },
   adjustments: {
     all: () => ipcRenderer.invoke('adjustments:all'),

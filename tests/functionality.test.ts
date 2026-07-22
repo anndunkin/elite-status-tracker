@@ -10,7 +10,10 @@ import {
   statusOverrideSet, statusOverrideClear,
 } from '../electron/database';
 import { haversineMiles } from '../electron/airports';
-import { qualifiesForTier, highestQualifiedTier, programYearOf, sumMetrics } from '../electron/rules';
+import {
+  qualifiesForTier, highestQualifiedTier, programYearOf, sumMetrics,
+  viewYearToDate, selectDashboardTrips,
+} from '../electron/rules';
 
 describe('fresh-database seeding (v1.2: reference/rules only, no historical trips)', () => {
   const db = seededDb();
@@ -359,6 +362,103 @@ describe('AA Executive Platinum permanent-lifetime scenario (Ann fixture)', () =
     lifetimeStatusClear(db, 'aa');
     const cleared = computeProjections(db, new Date('2026-07-01T00:00:00Z')).find(p => p.program.id === 'aa')!;
     expect(cleared.currentStatusTier).toBeNull();
+  });
+});
+
+describe('dashboard year-view projection (viewYear → synthetic today)', () => {
+  it('viewYearToDate omitted returns the real "now" (default behavior unchanged)', () => {
+    const now = new Date('2026-07-01T12:00:00Z');
+    expect(viewYearToDate(undefined, now)).toBe(now);
+    expect(viewYearToDate(null, now)).toBe(now);
+  });
+
+  it('a calendar program buckets to the selected view year', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'DL 2025', start_date: '2025-06-01', status: 'completed',
+      entries: [{ program_id: 'dl', is_estimate: false, metric_values: { mqd: 12000 } }],
+    });
+    const view2025 = computeProjections(db, viewYearToDate(2025)).find(p => p.program.id === 'dl')!;
+    expect(view2025.program_year).toBe(2025);
+    expect(view2025.ytdTotals.mqd).toBe(12000);
+
+    // Same DB viewed as 2026: 2025 activity is no longer YTD — it becomes the held (prior-year) tier.
+    const view2026 = computeProjections(db, viewYearToDate(2026)).find(p => p.program.id === 'dl')!;
+    expect(view2026.program_year).toBe(2026);
+    expect(view2026.ytdTotals.mqd ?? 0).toBe(0);
+    expect(view2026.heldFromYear).toBe(2025);
+  });
+
+  it('AA (non-calendar year_type) resolves the expected status-year for a view, incl. a Feb boundary crossing', () => {
+    const db = seededDb();
+    // Feb 2027 activity belongs to the AA status-year that STARTED in Mar 2026 → AA year 2026.
+    tripCreate(db, {
+      label: 'AA Feb 2027', start_date: '2027-02-10', status: 'completed',
+      entries: [{ program_id: 'aa', is_estimate: false, metric_values: { points: 50000 } }],
+    });
+    const view2026 = computeProjections(db, viewYearToDate(2026)).find(p => p.program.id === 'aa')!;
+    const view2027 = computeProjections(db, viewYearToDate(2027)).find(p => p.program.id === 'aa')!;
+    expect(view2026.program_year).toBe(2026);
+    expect(view2026.ytdTotals.points).toBe(50000); // Feb 2027 → AA 2026 window
+    expect(view2027.program_year).toBe(2027);
+    expect(view2027.ytdTotals.points ?? 0).toBe(0);
+  });
+});
+
+describe('dashboard trip sections (REAL now drives overdue/upcoming, viewYear only filters by calendar year)', () => {
+  const now = new Date('2026-07-15T00:00:00Z'); // the REAL "today" in these tests
+
+  it('classifies the current-year trips into overdue vs upcoming vs completed', () => {
+    const db = seededDb();
+    tripCreate(db, { label: 'Past not done', start_date: '2026-01-10', status: 'planned' });
+    tripCreate(db, { label: 'Future', start_date: '2026-12-20', status: 'booked' });
+    tripCreate(db, { label: 'Done', start_date: '2026-02-02', status: 'completed' });
+    const { needsUpdate, upcoming } = selectDashboardTrips(tripGetAll(db), 2026, now);
+    expect(needsUpdate.map(t => t.label)).toEqual(['Past not done']);
+    expect(upcoming.map(t => t.label)).toEqual(['Future']);
+  });
+
+  it('sorts needs-update oldest-first and upcoming soonest-first', () => {
+    const db = seededDb();
+    tripCreate(db, { label: 'Overdue B', start_date: '2026-03-01', status: 'planned' });
+    tripCreate(db, { label: 'Overdue A', start_date: '2026-01-01', status: 'planned' });
+    tripCreate(db, { label: 'Upcoming Late', start_date: '2026-12-01', status: 'booked' });
+    tripCreate(db, { label: 'Upcoming Soon', start_date: '2026-08-01', status: 'booked' });
+    const { needsUpdate, upcoming } = selectDashboardTrips(tripGetAll(db), 2026, now);
+    expect(needsUpdate.map(t => t.label)).toEqual(['Overdue A', 'Overdue B']);
+    expect(upcoming.map(t => t.label)).toEqual(['Upcoming Soon', 'Upcoming Late']);
+  });
+
+  it('viewing NEXT year: a future trip that has not happened is UPCOMING, never overdue', () => {
+    const db = seededDb();
+    tripCreate(db, { label: 'Next-year trip', start_date: '2027-03-01', status: 'planned' });
+    const { needsUpdate, upcoming } = selectDashboardTrips(tripGetAll(db), 2027, now);
+    expect(needsUpdate).toEqual([]);                       // NOT overdue — it hasn't happened yet
+    expect(upcoming.map(t => t.label)).toEqual(['Next-year trip']);
+  });
+
+  it('viewing LAST year (mirror): a past uncompleted trip is OVERDUE, upcoming is empty', () => {
+    const db = seededDb();
+    tripCreate(db, { label: 'Last-year trip', start_date: '2025-05-01', status: 'booked' });
+    const { needsUpdate, upcoming } = selectDashboardTrips(tripGetAll(db), 2025, now);
+    expect(needsUpdate.map(t => t.label)).toEqual(['Last-year trip']);
+    expect(upcoming).toEqual([]);
+  });
+
+  it('a viewYear with only completed trips yields two legitimately-empty sections', () => {
+    const db = seededDb();
+    tripCreate(db, { label: 'Done 2027', start_date: '2027-04-01', status: 'completed' });
+    const { needsUpdate, upcoming } = selectDashboardTrips(tripGetAll(db), 2027, now);
+    expect(needsUpdate).toEqual([]);
+    expect(upcoming).toEqual([]);
+  });
+
+  it('restricts each section to the selected calendar year of start_date', () => {
+    const db = seededDb();
+    tripCreate(db, { label: '2025 overdue', start_date: '2025-06-01', status: 'planned' });
+    tripCreate(db, { label: '2026 overdue', start_date: '2026-06-01', status: 'planned' });
+    expect(selectDashboardTrips(tripGetAll(db), 2025, now).needsUpdate.map(t => t.label)).toEqual(['2025 overdue']);
+    expect(selectDashboardTrips(tripGetAll(db), 2026, now).needsUpdate.map(t => t.label)).toEqual(['2026 overdue']);
   });
 });
 

@@ -4,7 +4,10 @@ import {
   computeProjections, tripCreate, lifetimeMileageGetAll, accruedLifetimeMiles,
   statusOverrideSet, statusOverrideClear,
 } from '../electron/database';
-import { qualifiesForTier, programYearOf, isLeapYear, currentProgramYear, sumMetrics } from '../electron/rules';
+import {
+  qualifiesForTier, programYearOf, isLeapYear, currentProgramYear, sumMetrics,
+  classifyTripByDate, viewYearToDate, MIN_VIEW_YEAR, MAX_VIEW_YEAR,
+} from '../electron/rules';
 
 describe('empty database', () => {
   it('projects programs with zero totals and no tier', () => {
@@ -111,6 +114,49 @@ describe('lifetime mileage boundaries', () => {
     expect(dl.currentMiles).toBeGreaterThan(5000000);
     expect(dl.nextMilestone).toBeNull();
     expect(dl.milesToNext).toBeNull();
+  });
+});
+
+describe('classifyTripByDate boundaries (REAL now)', () => {
+  const now = new Date('2026-07-15T00:00:00Z');
+  it('a completed trip is never overdue or upcoming', () => {
+    expect(classifyTripByDate({ start_date: '2026-01-01', status: 'completed' }, now)).toBe('neither');
+  });
+  it('a planned trip ending the day before today is overdue', () => {
+    expect(classifyTripByDate({ start_date: '2026-07-14', status: 'planned' }, now)).toBe('overdue');
+  });
+  it('a booked trip starting exactly today is upcoming (today counts as still-to-come)', () => {
+    expect(classifyTripByDate({ start_date: '2026-07-15', status: 'booked' }, now)).toBe('upcoming');
+  });
+  it('a planned trip starting the day after today is upcoming', () => {
+    expect(classifyTripByDate({ start_date: '2026-07-16', status: 'planned' }, now)).toBe('upcoming');
+  });
+  it('an in-progress trip (started, end_date still in the future) is neither', () => {
+    expect(classifyTripByDate({ start_date: '2026-07-10', end_date: '2026-07-20', status: 'booked' }, now)).toBe('neither');
+  });
+  it('uses end_date (not start_date) to decide overdue — a trip that started but ended before today is overdue', () => {
+    expect(classifyTripByDate({ start_date: '2026-07-01', end_date: '2026-07-05', status: 'planned' }, now)).toBe('overdue');
+  });
+});
+
+describe('viewYearToDate clamping', () => {
+  const now = new Date('2026-07-15T00:00:00Z');
+  it('null / undefined return real now unchanged', () => {
+    expect(viewYearToDate(null, now)).toBe(now);
+    expect(viewYearToDate(undefined, now)).toBe(now);
+  });
+  it('a plain year maps to Dec 31 UTC of that year', () => {
+    const d = viewYearToDate(2027, now);
+    expect(d.toISOString().slice(0, 10)).toBe('2027-12-31');
+  });
+  it('clamps below MIN_VIEW_YEAR', () => {
+    expect(viewYearToDate(1500, now).getUTCFullYear()).toBe(MIN_VIEW_YEAR);
+  });
+  it('clamps above MAX_VIEW_YEAR', () => {
+    expect(viewYearToDate(9999, now).getUTCFullYear()).toBe(MAX_VIEW_YEAR);
+  });
+  it('truncates a fractional year toward zero', () => {
+    expect(viewYearToDate(2027.9, now).getUTCFullYear()).toBe(2027);
   });
 });
 
