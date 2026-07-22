@@ -24,14 +24,25 @@ React (src/)  ──window.api──▶  preload.ts  ──ipc──▶  main.ts
   rules with source citations, and the v1.1 lifetime-status / lifetime-mileage
   seeds (Hilton lifetime Diamond; Delta Million Miler baseline).
 - **airports.ts** — curated IATA reference and haversine distance.
-- **seedData.ts** — **V1-only** historical data loader (see below).
+- (`legacy/seedData.ts` — the retired V1-only historical data loader, archived and
+  no longer imported; see "Historical seed removed in v1.2" below.)
 
 ## Data model
 
-Thirteen tables: `programs`, `program_rule_versions`, `program_tiers`, `trips`,
+Fourteen tables: `programs`, `program_rule_versions`, `program_tiers`, `trips`,
 `trip_segments`, `trip_program_entries`, `program_year_adjustments`,
-`program_last_activity`, `rule_refresh_log`, `app_meta`, and the v1.1 additions
-`program_lifetime_status`, `program_lifetime_mileage`, `card_earnings_entries`.
+`program_last_activity`, `rule_refresh_log`, `app_meta`, the v1.1 additions
+`program_lifetime_status`, `program_lifetime_mileage`, `card_earnings_entries`,
+and the v1.2 addition `program_status_overrides`.
+
+- `program_status_overrides` (`id`, `program_id`, `program_year`, `tier_name`,
+  `notes?`, `created_at`, `UNIQUE(program_id, program_year)`) — a one-time,
+  program-year-scoped manual override of the displayed **Current** tier (e.g. a
+  purchased/gifted status or status match). Non-permanent: it applies only to its
+  `program_year` and does not persist into future years. Permanent/lifetime status
+  reuses `program_lifetime_status` instead (now settable for any program, not just
+  Hilton). Both are validated: the tier name must belong to the program's current
+  tier set.
 
 - `program_lifetime_status` (`program_id` PK, `tier_name`, `achieved_date?`,
   `notes?`) — a generic lifetime/permanent tier that floors the displayed current
@@ -75,10 +86,16 @@ program-year it belongs to (trips by `start_date`, adjustments by
   **planned/booked** trips in the current year.
 - **heldTier / heldFromYear / heldTotals** — the tier carried over from the most
   recent **completed** (prior) program-year with activity.
-- **currentStatusTier** — the tier actually held now: `MAX(heldTier, lifetimeTier)`
-  by `tier_order`, so it never drops below a lifetime status (e.g. Hilton lifetime
-  Diamond). Falls back gracefully to `heldTier`, then `null`, when data is absent.
-- **lifetimeStatus / lifetimeMileage** — attached per program for display.
+- **currentStatusTier** — the tier actually displayed as "Current":
+  `MAX(lifetimeFloorTier, currentYearOverrideTier, calculatedHeldTier)` by
+  `tier_order`. Any of the three inputs may be absent; the result is `null` only
+  when all are. A lifetime floor never drops the displayed tier below itself, and
+  a current-program-year override (from `program_status_overrides`, bucketed by
+  `programYearOf` so AA's Mar 1–Feb window is respected) participates in the same
+  MAX. YTD and Projected are computed independently, so an override or floor never
+  hides the underlying earned progress.
+- **overrideTier** — the current-program-year manual override tier, if any.
+- **lifetimeStatus / statusOverride / lifetimeMileage** — attached per program for display.
 - **nextTier** — the next tier above the YTD tier.
 
 `currentTotals`/`currentTier` are retained as aliases of the YTD values for
@@ -110,19 +127,20 @@ each program's **current qualifying metric** (e.g. Alaska → `points`, United �
 normalization, not a claim that the historical unit equals the current one; treat
 pre-2026 projections as directional.
 
-### V1-only historical seed
+### Historical seed removed in v1.2
 
-`electron/seedData.ts` begins with the marker comment:
+The V1 convenience seed (historical trips/adjustments/last-activity) is no longer
+loaded. `seedData.ts`, `seedTrips.json`, and `seedCounts.json` have been moved to
+the top-level `legacy/` folder and are not imported by any active code path;
+`scripts/convert_seed.py` is retained only for regenerating that archived data.
 
-```
-// V1 ONLY: ships with historical trip data pre-loaded so Ann can test immediately.
-// Remove this import/call from database.ts before cutting v2.
-```
-
-To ship a clean v2 with no pre-loaded data, delete the `seedHistoricalData`
-import and its call in `database.ts` (and optionally remove `seedData.ts` /
-`seedTrips.json`). The seed runs exactly once, gated by the `app_meta.is_seeded`
-flag.
+`seedIfFresh()` in `database.ts` now seeds **only** the reference/rules dataset
+(programs, tier rule versions, the Hilton lifetime-Diamond row, and the Delta
+Million Miler baseline). It runs exactly once, gated by `app_meta.is_seeded`,
+which now means "reference/rules data has been seeded." Because the gate
+short-circuits on any database that already has the flag set, existing v1.0/v1.1
+databases are never re-seeded or migrated — their user data is fully preserved.
+A brand-new database therefore starts with zero trips.
 
 ## Packaging
 
@@ -131,8 +149,9 @@ flag.
   (electron-builder otherwise defaults to the host platform).
 - `scripts/afterPack.js` injects the prebuilt `better_sqlite3.node`
   (`prebuilt-win32-x64/`) into `app.asar.unpacked` — no native rebuild.
-- `scripts/copy-electron-assets.js` copies `seedTrips.json` next to the compiled
-  main so `require('./seedTrips.json')` resolves inside the asar.
+- `scripts/copy-electron-assets.js` copies any runtime JSON assets next to the
+  compiled main inside the asar. As of v1.2 there are none (the historical seed
+  JSON was removed from the active build), but the hook is retained for future use.
 - `build/sign.sh` code-signs the installer with `osslsigncode` using the
   self-signed certificate in `build/` (generated fresh for this app).
 
@@ -146,10 +165,15 @@ Vitest, four node-environment suites:
   import schema/version, export→import round-trip.
 - **boundary** — zero/negative/missing metrics, AA Feb 28/29 & Mar 1 boundaries,
   leap years, empty DB, one-tier-away, very large totals.
-- **functionality** — CRUD, projection correctness, airmile spot checks, seed
-  row counts per program, rule-version management, quarterly due-date logic,
-  card-earnings CRUD + YTD/Projected wiring, lifetime-status floor, three-part
-  status separation, Delta lifetime-mileage accrual, Marriott/Hyatt rule
-  confirmation.
+- **functionality** — CRUD, projection correctness, airmile spot checks,
+  fresh-DB seeding (reference/rules present, zero historical trips),
+  non-destructive re-seed of an existing populated DB, rule-version management,
+  quarterly due-date logic, card-earnings CRUD + YTD/Projected wiring,
+  lifetime-status floor, three-part status separation, Delta lifetime-mileage
+  accrual, Marriott/Hyatt rule confirmation, MAX-precedence current-tier
+  resolution across all present/absent combinations, and the AA Executive
+  Platinum permanent-lifetime regression fixture.
 
-83 tests total (61 from v1.0.0 plus 22 for v1.1), all passing.
+102 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2), all passing.
+
+The portable JSON payload is at `APP_FILE_VERSION = 3` (adds `status_overrides`).

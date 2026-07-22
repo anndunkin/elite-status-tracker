@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type {
   Program, ProgramProjection, ProgramYearAdjustment, TripWithDetails,
@@ -34,7 +34,15 @@ export default function ProgramDetail() {
   const [cardEarnings, setCardEarnings] = useState<CardEarningEntry[]>([]);
   const [tiers, setTiers] = useState<{ versions: ProgramRuleVersion[]; tiersByVersion: Record<number, ProgramTier[]> } | null>(null);
 
-  useEffect(() => {
+  // Edit-status form state.
+  const [editing, setEditing] = useState(false);
+  const [formTier, setFormTier] = useState('');
+  const [formPermanent, setFormPermanent] = useState(false);
+  const [formNotes, setFormNotes] = useState('');
+  const [formAchieved, setFormAchieved] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
     window.api.programs.getById(id).then(setProgram);
     window.api.projection.all().then(all => setProj(all.find(p => p.program.id === id) ?? null));
     window.api.trips.getAll().then(setTrips);
@@ -43,7 +51,70 @@ export default function ProgramDetail() {
     window.api.programs.getTiers(id).then(setTiers);
   }, [id]);
 
+  useEffect(() => { load(); }, [load]);
+
   const year = proj?.program_year ?? null;
+
+  // Tier names for the current rule version, ordered — populates the tier dropdown.
+  const currentTierList = useMemo(() => {
+    if (!tiers) return [] as ProgramTier[];
+    const current = tiers.versions.find(v => v.is_current === 1) ?? tiers.versions[0];
+    return current ? (tiers.tiersByVersion[current.id] ?? []) : [];
+  }, [tiers]);
+
+  function openEditor() {
+    if (!proj) return;
+    // Pre-fill from an existing lifetime status (permanent) or current-year override.
+    if (proj.lifetimeStatus) {
+      setFormPermanent(true);
+      setFormTier(proj.lifetimeStatus.tier_name);
+      setFormNotes(proj.lifetimeStatus.notes ?? '');
+      setFormAchieved(proj.lifetimeStatus.achieved_date ?? '');
+    } else if (proj.statusOverride) {
+      setFormPermanent(false);
+      setFormTier(proj.statusOverride.tier_name);
+      setFormNotes(proj.statusOverride.notes ?? '');
+      setFormAchieved('');
+    } else {
+      setFormPermanent(false);
+      setFormTier(currentTierList[0]?.tier_name ?? '');
+      setFormNotes('');
+      setFormAchieved('');
+    }
+    setFormError(null);
+    setEditing(true);
+  }
+
+  async function submitStatus() {
+    if (!proj || !formTier) { setFormError('Pick a tier.'); return; }
+    try {
+      if (formPermanent) {
+        await window.api.lifetime.setStatus({
+          program_id: id, tier_name: formTier,
+          achieved_date: formAchieved.trim() || null, notes: formNotes.trim() || null,
+        });
+      } else {
+        await window.api.statusOverrides.set({
+          program_id: id, program_year: proj.program_year, tier_name: formTier,
+          notes: formNotes.trim() || null,
+        });
+      }
+      setEditing(false);
+      load();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function clearLifetime() {
+    await window.api.lifetime.clearStatus(id);
+    load();
+  }
+  async function clearOverride() {
+    if (!proj) return;
+    await window.api.statusOverrides.clear(id, proj.program_year);
+    load();
+  }
 
   const contributingTrips = useMemo(() => {
     if (!program || year == null) return [];
@@ -70,11 +141,6 @@ export default function ProgramDetail() {
         <button className="btn-ghost" onClick={() => navigate('/')}>← Dashboard</button>
         <h1 className="text-2xl font-bold">{program.name}</h1>
         <span className="text-xs text-slate-400 uppercase">{program.type} · {year} program-year</span>
-        {proj.lifetimeStatus && (
-          <span className="ml-auto inline-block rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 px-3 py-1 text-xs font-semibold">
-            ★ Lifetime {proj.lifetimeStatus.tier_name}
-          </span>
-        )}
       </div>
 
       {/* Three-part status */}
@@ -100,6 +166,76 @@ export default function ProgramDetail() {
             <p className="text-[11px] text-slate-500">{totalsText(proj.projectedTotals)}</p>
           </div>
         </div>
+      </section>
+
+      {/* Manual status editing (override + lifetime) */}
+      <section className="card p-4">
+        <div className="flex items-center gap-3 mb-2">
+          <h2 className="font-semibold">Status</h2>
+          <div className="ml-auto flex flex-wrap gap-2 items-center">
+            {proj.lifetimeStatus && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 px-3 py-1 text-xs font-semibold">
+                ★ Lifetime {proj.lifetimeStatus.tier_name}
+                <button className="ml-1 underline hover:no-underline" onClick={clearLifetime}>clear</button>
+              </span>
+            )}
+            {proj.statusOverride && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 px-3 py-1 text-xs font-semibold">
+                {year} override: {proj.statusOverride.tier_name}
+                <button className="ml-1 underline hover:no-underline" onClick={clearOverride}>clear</button>
+              </span>
+            )}
+            <button className="btn-primary text-xs" onClick={openEditor}>Edit Status</button>
+          </div>
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Displayed “Current” is the highest of your calculated held tier, any lifetime floor, and any
+          current-program-year override. Setting a status here does not change your earned Year-to-date or
+          Projected numbers below.
+        </p>
+
+        {editing && (
+          <div className="mt-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-sm">
+                <span className="block text-xs uppercase text-slate-400 mb-1">Tier</span>
+                <select className="input w-full" value={formTier} onChange={e => setFormTier(e.target.value)}>
+                  {currentTierList.length === 0 && <option value="">(no tiers)</option>}
+                  {currentTierList.map(t => (
+                    <option key={t.id} value={t.tier_name}>{t.tier_name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="block text-xs uppercase text-slate-400 mb-1">
+                  {formPermanent ? 'Achieved date (optional)' : 'Achieved date (permanent only)'}
+                </span>
+                <input type="date" className="input w-full" value={formAchieved}
+                  disabled={!formPermanent}
+                  onChange={e => setFormAchieved(e.target.value)} />
+              </label>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={formPermanent} onChange={e => setFormPermanent(e.target.checked)} />
+              <span>This is permanent / lifetime status (never expires; floors “Current” every year)</span>
+            </label>
+            <label className="text-sm block">
+              <span className="block text-xs uppercase text-slate-400 mb-1">Notes (optional)</span>
+              <input className="input w-full" value={formNotes} placeholder="e.g. Bought up to Exec Plat"
+                onChange={e => setFormNotes(e.target.value)} />
+            </label>
+            {formError && <p className="text-sm text-red-500">{formError}</p>}
+            <div className="flex gap-2">
+              <button className="btn-primary text-sm" onClick={submitStatus}>Save</button>
+              <button className="btn-ghost text-sm" onClick={() => setEditing(false)}>Cancel</button>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              {formPermanent
+                ? 'Permanent status is stored as a lifetime floor for this program and applies to every program-year.'
+                : `A one-time override applies to the ${year} program-year only; next year reverts to your earned tier unless you set a new override.`}
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Delta lifetime mileage */}

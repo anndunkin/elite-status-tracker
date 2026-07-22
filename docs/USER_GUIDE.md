@@ -2,15 +2,21 @@
 
 ## Installing
 
-1. Download `Elite Status Tracker Setup 1.1.0.exe` from the release page.
+1. Download `Elite Status Tracker Setup 1.2.0.exe` from the release page.
 2. Run it. Because the app is signed with a self-signed certificate, Windows
    SmartScreen may show a "Windows protected your PC" notice — click
    **More info → Run anyway**.
 3. Choose an install location (you can change it) and finish. A desktop and Start
    menu shortcut are created.
 
-The app opens with your historical travel already loaded so you can explore it
-immediately.
+A fresh install opens as a blank slate — no trips are pre-loaded — but every
+program's current tier rules and reference data (including Hilton lifetime Diamond
+and the Delta Million Miler baseline) are ready out of the box. Add your trips
+from the **Trips** screen to start tracking.
+
+> Upgrading from an earlier version? Opening your existing tracker file keeps all
+> of your trips, card earnings, and adjustments exactly as they were — the
+> blank-slate behavior only applies to brand-new files.
 
 ## The Dashboard
 
@@ -31,6 +37,34 @@ status values:
 metric totals behind each status value, the trips crediting toward the program
 this year (click **Edit** to jump straight to a trip), card-earnings entries, year
 adjustments, and the tier table.
+
+## Editing your status (overrides & lifetime status)
+
+Sometimes the tier the app calculates from your tracked activity isn't the whole
+story — you may have **bought up** to a status, received a **status match or
+challenge**, or hold a **lifetime** status. On any **Program Detail** page, click
+**Edit Status** to set what's displayed as your **Current** tier:
+
+1. Pick the **tier** from the dropdown.
+2. Leave **“This is permanent / lifetime status”** unchecked for a **one-time
+   override** — it corrects the displayed Current tier for **this program-year
+   only** and reverts to your calculated tier next year unless you set it again.
+3. Check **“This is permanent / lifetime status”** to record a **lifetime floor** —
+   it applies to **every** program-year and never drops your displayed Current
+   below it (this is the same mechanism behind Hilton lifetime Diamond, now
+   available for any program). You can add an optional achieved date and note.
+4. **Save.**
+
+Your override and any lifetime status appear as badges at the top of the Status
+section, each with a **clear** link to remove it. Setting a status here never
+changes your **Year-to-date** or **Projected** numbers — those always reflect your
+real earned progress. When more than one applies, the app displays the **highest**
+of your calculated held tier, any lifetime floor, and any current-year override.
+
+> **Example — American AAdvantage Executive Platinum:** open the American card →
+> **Edit Status** → choose **Executive Platinum**, tick **“This is permanent /
+> lifetime status,”** and **Save**. Your Current will show Executive Platinum every
+> year going forward, while YTD/Projected keep tracking what you actually earn.
 
 ### Delta Million Miler
 

@@ -6,6 +6,7 @@ import type {
   TierRequirement, ProgramProjection, AppFilePayload,
   ProgramLifetimeStatus, ProgramLifetimeMileageRow, ProgramLifetimeMileageView,
   LifetimeMileageMilestone, CardEarningEntry, CardEarningInput, CardEarningUpdate,
+  ProgramStatusOverride, ProgramStatusOverrideInput,
 } from './types';
 import { APP_FILE_VERSION } from './types';
 import {
@@ -14,7 +15,6 @@ import {
 import {
   highestQualifiedTier, nextTierAbove, currentProgramYear, programYearOf, sumMetrics,
 } from './rules';
-import { seedHistoricalData } from './seedData';
 
 let db: Database.Database | null = null;
 
@@ -157,6 +157,16 @@ export function initSchema(database: Database.Database): void {
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS program_status_overrides (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      program_id TEXT NOT NULL REFERENCES programs(id),
+      program_year INTEGER NOT NULL,
+      tier_name TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(program_id, program_year)
+    );
   `);
 }
 
@@ -175,7 +185,14 @@ function addMonths(iso: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Seed programs, tier rules, and historical trip data exactly once. */
+/**
+ * Seed the app's core reference/rules dataset (programs, tier rule versions,
+ * lifetime-status and lifetime-mileage reference rows) exactly once, on a
+ * brand-new database. No historical trip data is seeded — a fresh install is a
+ * blank slate ready for real use. Gated by `app_meta.is_seeded='1'`, which now
+ * means "reference/rules data has been seeded" (existing v1.0/v1.1 databases
+ * that already have the flag set are left completely untouched).
+ */
 export function seedIfFresh(database: Database.Database): void {
   if (metaGet(database, 'is_seeded') === '1') return;
 
@@ -209,9 +226,6 @@ export function seedIfFresh(database: Database.Database): void {
       database.prepare(`INSERT OR IGNORE INTO program_lifetime_mileage (program_id, baseline_miles, baseline_date, milestones)
         VALUES (?, ?, ?, ?)`).run(lm.program_id, lm.baseline_miles, lm.baseline_date, JSON.stringify(lm.milestones));
     }
-
-    // Historical trip / adjustment / last-activity data (V1 seed, isolated).
-    seedHistoricalData(database);
 
     const today = new Date().toISOString().slice(0, 10);
     metaSet(database, 'db_created_at', new Date().toISOString());
@@ -304,6 +318,7 @@ export function lifetimeStatusGetAll(database: Database.Database): ProgramLifeti
 export function lifetimeStatusSet(database: Database.Database, data: ProgramLifetimeStatus): ProgramLifetimeStatus {
   if (!programGetById(database, data.program_id)) throw new Error('Unknown program');
   if (!data.tier_name?.trim()) throw new Error('Lifetime tier name is required');
+  assertValidTier(database, data.program_id, data.tier_name.trim());
   database.prepare(`INSERT INTO program_lifetime_status (program_id, tier_name, achieved_date, notes)
     VALUES (@program_id, @tier_name, @achieved_date, @notes)
     ON CONFLICT(program_id) DO UPDATE SET
@@ -399,6 +414,47 @@ export function cardEarningDelete(database: Database.Database, id: number): bool
   return database.prepare('DELETE FROM card_earnings_entries WHERE id = ?').run(id).changes > 0;
 }
 
+// ─── Manual status overrides (current-program-year, non-permanent) ───────────────
+
+/** Tier names valid for a program: its current tier list (lifetime tiers reuse the same names). */
+function validTierNames(database: Database.Database, programId: string): Set<string> {
+  return new Set(currentTiers(database, programId).map(t => t.tier_name));
+}
+
+/** Guard: the given tier must belong to the program's current tier set. */
+function assertValidTier(database: Database.Database, programId: string, tierName: string): void {
+  if (!validTierNames(database, programId).has(tierName)) {
+    throw new Error(`Unknown tier "${tierName}" for program ${programId}`);
+  }
+}
+
+export function statusOverridesGetAll(database: Database.Database): ProgramStatusOverride[] {
+  return database.prepare(
+    'SELECT * FROM program_status_overrides ORDER BY program_id, program_year DESC'
+  ).all() as ProgramStatusOverride[];
+}
+
+/** Upsert the (one) override for a program in a given program-year. */
+export function statusOverrideSet(database: Database.Database, data: ProgramStatusOverrideInput): ProgramStatusOverride {
+  if (!programGetById(database, data.program_id)) throw new Error('Unknown program');
+  if (!Number.isInteger(data.program_year)) throw new Error('A valid program year is required');
+  if (!data.tier_name?.trim()) throw new Error('Tier name is required');
+  const tier = data.tier_name.trim();
+  assertValidTier(database, data.program_id, tier);
+  database.prepare(`INSERT INTO program_status_overrides (program_id, program_year, tier_name, notes)
+    VALUES (@program_id, @program_year, @tier_name, @notes)
+    ON CONFLICT(program_id, program_year) DO UPDATE SET
+      tier_name = excluded.tier_name, notes = excluded.notes`)
+    .run({ program_id: data.program_id, program_year: data.program_year, tier_name: tier, notes: data.notes ?? null });
+  return database.prepare('SELECT * FROM program_status_overrides WHERE program_id = ? AND program_year = ?')
+    .get(data.program_id, data.program_year) as ProgramStatusOverride;
+}
+
+export function statusOverrideClear(database: Database.Database, programId: string, programYear: number): boolean {
+  return database.prepare('DELETE FROM program_status_overrides WHERE program_id = ? AND program_year = ?')
+    .run(programId, programYear).changes > 0;
+}
+
 // ─── Trips ────────────────────────────────────────────────────────────────────
 
 function hydrateTrip(database: Database.Database, trip: Trip): TripWithDetails {
@@ -492,6 +548,7 @@ export function computeProjections(database: Database.Database, today: Date = ne
   const adjustments = adjustmentsGetAll(database);
   const cardEarnings = cardEarningsGetAll(database);
   const lifetimeStatuses = lifetimeStatusGetAll(database);
+  const statusOverrides = statusOverridesGetAll(database);
   const lifetimeMileage = lifetimeMileageGetAll(database);
   const result: ProgramProjection[] = [];
 
@@ -539,15 +596,23 @@ export function computeProjections(database: Database.Database, today: Date = ne
     const heldTotals = heldFromYear != null ? sumMetrics(actualByYear.get(heldFromYear)!) : {};
     const heldTier = heldFromYear != null ? highestQualifiedTier(heldTotals, tiers) : null;
 
-    // Lifetime status floor: displayed current tier never drops below a lifetime tier.
+    // Displayed "Current" tier = the highest (by tier_order) of three possibly-absent inputs:
+    //   lifetime floor · current-program-year manual override · calculated held tier.
     const lifetimeStatus = lifetimeStatuses.find(l => l.program_id === program.id) ?? null;
-    const lifetimeTierObj = lifetimeStatus ? tiers.find(t => t.tier_name === lifetimeStatus.tier_name) ?? null : null;
-    let currentStatusTier: string | null = heldTier?.tier_name ?? null;
-    if (lifetimeStatus) {
-      const heldOrder = heldTier?.tier_order ?? -1;
-      const lifeOrder = lifetimeTierObj?.tier_order ?? Number.POSITIVE_INFINITY;
-      currentStatusTier = (lifeOrder >= heldOrder) ? lifetimeStatus.tier_name : (heldTier?.tier_name ?? null);
-    }
+    const statusOverride = statusOverrides.find(
+      o => o.program_id === program.id && o.program_year === programYear) ?? null;
+    const orderOf = (name: string | null | undefined): number =>
+      name ? (tiers.find(t => t.tier_name === name)?.tier_order ?? -1) : -1;
+    let currentStatusTier: string | null = null;
+    let bestOrder = Number.NEGATIVE_INFINITY;
+    const consider = (name: string | null | undefined) => {
+      if (!name) return;
+      const ord = orderOf(name);
+      if (ord > bestOrder) { bestOrder = ord; currentStatusTier = name; }
+    };
+    consider(heldTier?.tier_name);
+    consider(lifetimeStatus?.tier_name);
+    consider(statusOverride?.tier_name);
 
     const nextTier = nextTierAbove(ytdTier, tiers);
 
@@ -562,8 +627,10 @@ export function computeProjections(database: Database.Database, today: Date = ne
       ytdTotals,
       ytdTier: ytdTier?.tier_name ?? null,
       lifetimeTier: lifetimeStatus?.tier_name ?? null,
+      overrideTier: statusOverride?.tier_name ?? null,
       currentStatusTier,
       lifetimeStatus,
+      statusOverride,
       lifetimeMileage: lifetimeMileage.find(m => m.program_id === program.id) ?? null,
       nextTier: nextTier?.tier_name ?? null,
       nextTierRequirements: nextTier?.requirements ?? null,
@@ -612,18 +679,19 @@ export function buildFilePayload(database: Database.Database): AppFilePayload {
   const lifetime_status = lifetimeStatusGetAll(database);
   const lifetime_mileage = database.prepare('SELECT * FROM program_lifetime_mileage').all() as ProgramLifetimeMileageRow[];
   const card_earnings = cardEarningsGetAll(database);
+  const status_overrides = statusOverridesGetAll(database);
   return {
     version: APP_FILE_VERSION, savedAt: new Date().toISOString(),
     programs, rule_versions, tiers, trips, adjustments, last_activity,
-    lifetime_status, lifetime_mileage, card_earnings,
+    lifetime_status, lifetime_mileage, card_earnings, status_overrides,
   };
 }
 
 export function importFilePayload(database: Database.Database, payload: AppFilePayload): void {
   if (!payload || payload.version !== APP_FILE_VERSION) throw new Error('Unsupported or invalid file version');
   const tx = database.transaction(() => {
-    database.exec(`DELETE FROM card_earnings_entries; DELETE FROM program_lifetime_mileage;
-      DELETE FROM program_lifetime_status;
+    database.exec(`DELETE FROM program_status_overrides; DELETE FROM card_earnings_entries;
+      DELETE FROM program_lifetime_mileage; DELETE FROM program_lifetime_status;
       DELETE FROM trip_segments; DELETE FROM trip_program_entries; DELETE FROM trips;
       DELETE FROM program_year_adjustments; DELETE FROM program_last_activity;
       DELETE FROM program_tiers; DELETE FROM program_rule_versions; DELETE FROM programs;`);
@@ -672,6 +740,10 @@ export function importFilePayload(database: Database.Database, payload: AppFileP
     for (const ce of payload.card_earnings ?? []) {
       database.prepare(`INSERT INTO card_earnings_entries (id,program_id,entry_date,metric_key,amount,notes,created_at)
         VALUES (?,?,?,?,?,?,?)`).run(ce.id, ce.program_id, ce.entry_date, ce.metric_key, ce.amount, ce.notes ?? null, ce.created_at);
+    }
+    for (const so of payload.status_overrides ?? []) {
+      database.prepare(`INSERT INTO program_status_overrides (id,program_id,program_year,tier_name,notes,created_at)
+        VALUES (?,?,?,?,?,?)`).run(so.id, so.program_id, so.program_year, so.tier_name, so.notes ?? null, so.created_at);
     }
     metaSet(database, 'is_seeded', '1');
   });

@@ -10,10 +10,11 @@ import {
   buildFilePayload, importFilePayload,
   lifetimeStatusGetAll, lifetimeStatusSet, lifetimeStatusClear, lifetimeMileageGetAll,
   cardEarningsGetAll, cardEarningCreate, cardEarningUpdate, cardEarningDelete,
+  statusOverridesGetAll, statusOverrideSet, statusOverrideClear,
 } from './database';
 import type {
   TripCreate, TripUpdate, TierRequirement, AppFilePayload, FileResult,
-  ProgramLifetimeStatus, CardEarningInput, CardEarningUpdate,
+  ProgramLifetimeStatus, CardEarningInput, CardEarningUpdate, ProgramStatusOverrideInput,
 } from './types';
 import { haversineMiles, lookupAirport } from './airports';
 
@@ -149,6 +150,13 @@ ipcMain.handle('cardEarnings:getAll', () => cardEarningsGetAll(getDatabase()));
 ipcMain.handle('cardEarnings:create', (_e, data: CardEarningInput) => cardEarningCreate(getDatabase(), data));
 ipcMain.handle('cardEarnings:update', (_e, id: number, data: CardEarningUpdate) => cardEarningUpdate(getDatabase(), id, data));
 ipcMain.handle('cardEarnings:delete', (_e, id: number) => cardEarningDelete(getDatabase(), id));
+
+// ─── Manual status overrides ──────────────────────────────────────────────────
+
+ipcMain.handle('statusOverrides:getAll', () => statusOverridesGetAll(getDatabase()));
+ipcMain.handle('statusOverrides:set', (_e, data: ProgramStatusOverrideInput) => statusOverrideSet(getDatabase(), data));
+ipcMain.handle('statusOverrides:clear', (_e, programId: string, programYear: number) =>
+  statusOverrideClear(getDatabase(), programId, programYear));
 
 // ─── Airports ─────────────────────────────────────────────────────────────────
 

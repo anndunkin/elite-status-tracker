@@ -3,6 +3,44 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-07-22
+
+### Changed
+- **Fresh installs now start with an empty trip history.** The V1 convenience
+  seed (2012–2025 historical trips, adjustments, and last-activity markers) is no
+  longer loaded into new databases — a brand-new tracker is a blank slate ready
+  for real use. The app still seeds current program rules and reference data
+  (the eight active programs plus lapsed ones, 2026 tier rules, Hilton lifetime
+  Diamond, and the Delta Million Miler baseline) on every fresh database.
+  - This change affects **new/never-before-opened databases only**. Opening an
+    existing v1.0/v1.1 database preserves all of its trips, entries, card
+    earnings, and adjustments — the seed gate (`app_meta.is_seeded`) short-circuits
+    on any already-seeded file, so nothing is deleted or migrated destructively.
+  - The historical seed source (`seedData.ts` / `seedTrips.json` /
+    `seedCounts.json`) has been moved to a top-level `legacy/` folder for
+    reference and is no longer imported by any active code path.
+
+### Added
+- **Manual status editing for any program**, from the Program Detail page's new
+  **Edit Status** control:
+  - **Status override** — directly set/correct the displayed **Current** tier for
+    a program (e.g. a purchased/gifted status, status match, or challenge not
+    captured by tracked earning activity). A plain override applies to the
+    **current program-year only** (respecting the AA Mar 1–Feb window) and reverts
+    to the calculated earned tier next year unless renewed. Stored in a new
+    `program_status_overrides` table.
+  - **Permanent / lifetime status** — a checkbox on the same form promotes the
+    entry to a permanent floor via the existing generic `program_lifetime_status`
+    mechanism (previously exposed only for Hilton, now available for **every**
+    program). It never expires and never drops the displayed Current below itself.
+  - Existing overrides and lifetime status show as badges with **edit** / **clear**
+    affordances.
+- **Explicit, testable precedence for the displayed “Current” tier:**
+  `displayedCurrentTier = MAX(lifetimeFloorTier, currentYearOverrideTier, calculatedHeldTier)`
+  by tier order. Any input may be absent; Year-to-date and Projected always keep
+  showing the real earned progress underneath — an override never hides your
+  earned numbers.
+
 ## [1.1.0] — 2026-07-22
 
 ### Added

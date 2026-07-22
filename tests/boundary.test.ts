@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { seededDb, emptyDb } from './helpers';
 import {
   computeProjections, tripCreate, lifetimeMileageGetAll, accruedLifetimeMiles,
+  statusOverrideSet, statusOverrideClear,
 } from '../electron/database';
 import { qualifiesForTier, programYearOf, isLeapYear, currentProgramYear, sumMetrics } from '../electron/rules';
 
@@ -10,6 +11,20 @@ describe('empty database', () => {
     // empty schema has no programs seeded, so projections is []
     const db = emptyDb();
     expect(computeProjections(db)).toEqual([]);
+  });
+});
+
+describe('status-override edge cases', () => {
+  it('a lone override is displayed even with no earned/held data (never blank when one input present)', () => {
+    const db = seededDb();
+    statusOverrideSet(db, { program_id: 'aa', program_year: 2026, tier_name: 'Gold' });
+    const aa = computeProjections(db, new Date('2026-07-01T00:00:00Z')).find(p => p.program.id === 'aa')!;
+    expect(aa.heldTier).toBeNull();
+    expect(aa.currentStatusTier).toBe('Gold');
+  });
+  it('clearing a non-existent override returns false without throwing', () => {
+    const db = seededDb();
+    expect(statusOverrideClear(db, 'aa', 1999)).toBe(false);
   });
 });
 

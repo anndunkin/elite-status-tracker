@@ -3,6 +3,7 @@ import { seededDb, emptyDb } from './helpers';
 import {
   tripCreate, tripUpdate, programCreateRuleVersion, importFilePayload, buildFilePayload,
   cardEarningCreate, cardEarningUpdate, lifetimeStatusSet,
+  statusOverrideSet, statusOverridesGetAll, statusOverrideClear,
 } from '../electron/database';
 import { lookupAirport, haversineMiles } from '../electron/airports';
 import { APP_FILE_VERSION } from '../electron/types';
@@ -113,5 +114,46 @@ describe('JSON import schema', () => {
     expect((dst.prepare('SELECT COUNT(*) c FROM program_lifetime_status').get() as { c: number }).c).toBe(payload.lifetime_status!.length);
     expect((dst.prepare('SELECT COUNT(*) c FROM program_lifetime_mileage').get() as { c: number }).c).toBe(payload.lifetime_mileage!.length);
     expect((dst.prepare('SELECT COUNT(*) c FROM card_earnings_entries').get() as { c: number }).c).toBe(payload.card_earnings!.length);
+  });
+
+  it('round-trips manual status overrides', () => {
+    const src = seededDb();
+    statusOverrideSet(src, { program_id: 'aa', program_year: 2026, tier_name: 'Executive Platinum', notes: 'bought up' });
+    const payload = buildFilePayload(src);
+    expect(payload.status_overrides.length).toBe(1);
+    const dst = emptyDb();
+    importFilePayload(dst, payload);
+    expect((dst.prepare('SELECT COUNT(*) c FROM program_status_overrides').get() as { c: number }).c).toBe(1);
+  });
+});
+
+describe('manual status override validation', () => {
+  it('rejects an unknown program id', () => {
+    const db = seededDb();
+    expect(() => statusOverrideSet(db, { program_id: 'nope', program_year: 2026, tier_name: 'Gold' })).toThrow(/program/i);
+  });
+  it('rejects a tier name that is not valid for the program', () => {
+    const db = seededDb();
+    // "Diamond" is not an American AAdvantage tier.
+    expect(() => statusOverrideSet(db, { program_id: 'aa', program_year: 2026, tier_name: 'Diamond' })).toThrow(/tier/i);
+  });
+  it('rejects a blank tier name and a non-integer program year', () => {
+    const db = seededDb();
+    expect(() => statusOverrideSet(db, { program_id: 'aa', program_year: 2026, tier_name: '  ' })).toThrow(/tier/i);
+    expect(() => statusOverrideSet(db, { program_id: 'aa', program_year: 2026.5, tier_name: 'Gold' })).toThrow(/year/i);
+  });
+  it('accepts a valid tier, upserts by (program, year), and clears', () => {
+    const db = seededDb();
+    statusOverrideSet(db, { program_id: 'aa', program_year: 2026, tier_name: 'Gold' });
+    statusOverrideSet(db, { program_id: 'aa', program_year: 2026, tier_name: 'Executive Platinum', notes: 'corrected' });
+    const all = statusOverridesGetAll(db).filter(o => o.program_id === 'aa' && o.program_year === 2026);
+    expect(all.length).toBe(1); // upsert, not duplicate
+    expect(all[0].tier_name).toBe('Executive Platinum');
+    expect(statusOverrideClear(db, 'aa', 2026)).toBe(true);
+    expect(statusOverridesGetAll(db).some(o => o.program_id === 'aa' && o.program_year === 2026)).toBe(false);
+  });
+  it('rejects an invalid tier name for a generalized (non-Hilton) lifetime status', () => {
+    const db = seededDb();
+    expect(() => lifetimeStatusSet(db, { program_id: 'aa', tier_name: 'Nonsense', achieved_date: null, notes: null })).toThrow(/tier/i);
   });
 });

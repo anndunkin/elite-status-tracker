@@ -133,6 +133,28 @@ export interface ProgramLifetimeMileageView {
   milesToNext: number | null;
 }
 
+/**
+ * A one-time, program-year-scoped manual override of the displayed "Current"
+ * tier for a program (e.g. a purchased/gifted status or status-match that isn't
+ * captured by tracked earning activity). Unlike a lifetime status, it does not
+ * persist into future program-years.
+ */
+export interface ProgramStatusOverride {
+  id: number;
+  program_id: string;
+  program_year: number;
+  tier_name: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ProgramStatusOverrideInput {
+  program_id: string;
+  program_year: number;
+  tier_name: string;
+  notes?: string | null;
+}
+
 export type CardMetricKey = 'mqd' | 'points' | 'nights';
 
 /** Manual credit-card-driven elite qualifying credit, dated so it buckets by program-year. */
@@ -212,8 +234,11 @@ export interface ProgramProjection {
   ytdTier: string | null;
   // Lifetime status floor: displayed current tier never drops below a lifetime tier.
   lifetimeTier: string | null;
-  currentStatusTier: string | null; // MAX(heldTier, lifetimeTier)
+  // Manual current-program-year override of the displayed "Current" tier, if set.
+  overrideTier: string | null;
+  currentStatusTier: string | null; // MAX(heldTier, lifetimeTier, overrideTier) by tier_order
   lifetimeStatus: ProgramLifetimeStatus | null;
+  statusOverride: ProgramStatusOverride | null;
   lifetimeMileage: ProgramLifetimeMileageView | null;
   // Progress toward next tier (headline gauge, based on projected totals).
   nextTier: string | null;
@@ -223,7 +248,7 @@ export interface ProgramProjection {
 
 // ─── File payload (portable snapshot + JSON export/import) ──────────────────────
 
-export const APP_FILE_VERSION = 2;
+export const APP_FILE_VERSION = 3;
 
 export interface AppFilePayload {
   version: number;
@@ -237,6 +262,7 @@ export interface AppFilePayload {
   lifetime_status: ProgramLifetimeStatus[];
   lifetime_mileage: ProgramLifetimeMileageRow[];
   card_earnings: CardEarningEntry[];
+  status_overrides: ProgramStatusOverride[];
 }
 
 export interface FileResult {
@@ -271,6 +297,11 @@ export interface WindowApi {
     create: (data: CardEarningInput) => Promise<CardEarningEntry>;
     update: (id: number, data: CardEarningUpdate) => Promise<CardEarningEntry | null>;
     delete: (id: number) => Promise<boolean>;
+  };
+  statusOverrides: {
+    getAll: () => Promise<ProgramStatusOverride[]>;
+    set: (data: ProgramStatusOverrideInput) => Promise<ProgramStatusOverride>;
+    clear: (programId: string, programYear: number) => Promise<boolean>;
   };
   trips: {
     getAll: () => Promise<TripWithDetails[]>;

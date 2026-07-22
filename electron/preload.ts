@@ -35,6 +35,11 @@ const api: WindowApi = {
     update: (id, data) => ipcRenderer.invoke('cardEarnings:update', id, data),
     delete: (id) => ipcRenderer.invoke('cardEarnings:delete', id),
   },
+  statusOverrides: {
+    getAll: () => ipcRenderer.invoke('statusOverrides:getAll'),
+    set: (data) => ipcRenderer.invoke('statusOverrides:set', data),
+    clear: (programId, programYear) => ipcRenderer.invoke('statusOverrides:clear', programId, programYear),
+  },
   airports: {
     distance: (a, b) => ipcRenderer.invoke('airports:distance', a, b),
     lookup: (code) => ipcRenderer.invoke('airports:lookup', code),

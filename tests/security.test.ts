@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { seededDb } from './helpers';
-import { tripCreate, tripGetAll, programGetById, cardEarningCreate, cardEarningsGetAll } from '../electron/database';
+import {
+  tripCreate, tripGetAll, programGetById, cardEarningCreate, cardEarningsGetAll,
+  statusOverrideSet, statusOverridesGetAll,
+} from '../electron/database';
 
 const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf-8');
 
@@ -31,6 +34,15 @@ describe('SQL injection resistance (parameterized queries)', () => {
     expect(created.notes).toBe(evil);
     expect(cardEarningsGetAll(db).some(c => c.id === created.id)).toBe(true);
     expect(() => db.prepare('SELECT COUNT(*) FROM card_earnings_entries').get()).not.toThrow();
+  });
+
+  it('treats a malicious status-override note as literal data', () => {
+    const db = seededDb();
+    const evil = "x'); DROP TABLE program_status_overrides;--";
+    const created = statusOverrideSet(db, { program_id: 'aa', program_year: 2026, tier_name: 'Gold', notes: evil });
+    expect(created.notes).toBe(evil);
+    expect(statusOverridesGetAll(db).some(o => o.id === created.id)).toBe(true);
+    expect(() => db.prepare('SELECT COUNT(*) FROM program_status_overrides').get()).not.toThrow();
   });
 });
 
