@@ -16,6 +16,9 @@ module.exports = {
     "node_modules/better-sqlite3/build/Release/*.node",
     "electron/dist/preload.js"
   ],
+  extraResources: [
+    { from: "assets", to: "assets" }
+  ],
   npmRebuild: false,
   afterPack: "./scripts/afterPack.js",
   win: {

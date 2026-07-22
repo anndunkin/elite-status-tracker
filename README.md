@@ -21,11 +21,22 @@ Starwood Preferred Guest, Fairmont President's Club, Virgin Atlantic Flying Club
 
 ## Screens
 
-- **Dashboard** — one card per active program: current tier, projected tier,
-  running totals, and a progress bar toward the next tier.
+- **Dashboard** — a **year toggle** (last / this / next year) at the top, then one
+  card per active program showing a three-part status — **Current** (tier held
+  now), **Year-to-date** (posted activity this program-year), and **Projected**
+  (including planned/booked estimates) — plus a progress bar toward the next tier,
+  any lifetime status/mileage (e.g. Delta Million Miler) badge, and running totals.
+  Below the cards, two trip lists surface what needs attention: **Needs Update**
+  (past trips still marked planned/booked) and **Upcoming Trips**, each with a
+  one-click Edit that jumps to the trip.
 - **Trips** — list, add, and edit trips. Each trip can carry multiple per-program
   credit entries (marked estimate or actual) and optional flight segments with
   automatic great-circle mileage from IATA airport codes.
+- **Program Detail** — click any dashboard card for a full breakdown of the metric
+  totals behind each status value, the trips crediting the program this year,
+  **card-earnings** entries, year adjustments, the tier table, and an **Edit
+  Status** control for manual **status overrides** (one program-year) or a
+  permanent **lifetime status** floor.
 - **Programs** — tier tables for each program, full rule-version history, and the
   last-activity dates for lapsed programs.
 - **Manage Rules** — edit tier thresholds; saving creates a new rule version

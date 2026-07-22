@@ -167,25 +167,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 mb-6">
-        <TripPanel
-          title="Needs Update — Past Trips Not Marked Complete"
-          subtitle={`Planned/booked trips in ${viewYear} whose dates have passed`}
-          tone="warn"
-          trips={needsUpdate}
-          emptyText="All past trips are up to date. ✓"
-          onEdit={editTrip}
-        />
-        <TripPanel
-          title="Upcoming Trips"
-          subtitle={`Planned/booked trips in ${viewYear} still to come`}
-          tone="info"
-          trips={upcoming}
-          emptyText={`No upcoming trips for ${viewYear}.`}
-          onEdit={editTrip}
-        />
-      </div>
-
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map(p => {
           const prog = progressToNext(p);
@@ -264,6 +245,25 @@ export default function Dashboard() {
             </button>
           );
         })}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 mt-6">
+        <TripPanel
+          title="Needs Update — Past Trips Not Marked Complete"
+          subtitle={`Planned/booked trips in ${viewYear} whose dates have passed`}
+          tone="warn"
+          trips={needsUpdate}
+          emptyText="All past trips are up to date. ✓"
+          onEdit={editTrip}
+        />
+        <TripPanel
+          title="Upcoming Trips"
+          subtitle={`Planned/booked trips in ${viewYear} still to come`}
+          tone="info"
+          trips={upcoming}
+          emptyText={`No upcoming trips for ${viewYear}.`}
+          onEdit={editTrip}
+        />
       </div>
     </div>
   );

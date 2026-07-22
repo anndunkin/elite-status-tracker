@@ -188,12 +188,46 @@ A brand-new database therefore starts with zero trips.
 - `build/sign.sh` code-signs the installer with `osslsigncode` using the
   self-signed certificate in `build/` (generated fresh for this app).
 
+### Application icon resolution (v1.4)
+
+Windows shows two conceptually different icons: the **file** icon Explorer paints
+for the `.exe` (embedded resource, set by electron-builder's `win.icon`) and the
+**running-app/taskbar/window** icon (set by the `BrowserWindow` `icon` option). The
+former was always correct; the latter fell back to Electron's default because
+`createWindow()` passed no `icon`. v1.4 wires up the running-app icon:
+
+- **`electron/iconPath.ts`** — a pure, Electron-free resolver
+  (`resolveIconPath({ isPackaged, resourcesPath, dirname })`). In dev the compiled
+  main sits at `electron/dist/main.js`, so the repo `assets/` folder is two levels
+  up (`../../assets/icon.ico`). When packaged the icon ships in the app's
+  `resources/assets/` (see below), resolved via `process.resourcesPath`. The
+  filename is a hard-coded constant (`ICON_FILE = 'icon.ico'`) — no user/renderer
+  input ever participates, and `iconPathWithinAssets()` asserts the result stays
+  inside the assets directory. Both are unit-tested in the security suite.
+- **`electron/main.ts`** — `appIconPath()` feeds `app.isPackaged`,
+  `process.resourcesPath`, and `__dirname` into the resolver and passes the result
+  as the `BrowserWindow` `icon` option. On Windows,
+  `app.setAppUserModelId('com.dunkinglobal.elitestatustracker')` (matching the
+  electron-builder `appId`) runs at the very start of `whenReady`, before the
+  window is created, so the taskbar associates the process — including pinned
+  shortcuts and window grouping — with the app's own identity rather than the
+  generic Electron one.
+- **`electron-builder.config.js`** — an `extraResources` entry
+  (`{ from: "assets", to: "assets" }`) copies the icon artwork into the packaged
+  app's `resources/assets/` so the file physically exists at runtime (the installer
+  header's own icon is not readable by the running process). `win.icon` and
+  `signAndEditExecutable: false` are unchanged; the signing pipeline is untouched.
+
 ## Testing
 
 Vitest, four node-environment suites:
 
 - **security** — SQL-injection resistance, no `eval`/`new Function`, Electron
-  hardening flags, CSP, navigation guards, preload surface, path-traversal guard.
+  hardening flags, CSP, navigation guards, preload surface, path-traversal guard,
+  and (v1.4) icon-path resolution: the `BrowserWindow` icon option and
+  `setAppUserModelId` wiring, the fixed-constant icon path, dev/packaged
+  containment within the assets directory, and a regression assertion that the
+  dashboard panel reorder adds no IPC/data-access surface.
 - **validation** — required fields, CHECK constraints, airport lookups, JSON
   import schema/version, export→import round-trip.
 - **boundary** — zero/negative/missing metrics, AA Feb 28/29 & Mar 1 boundaries,
@@ -214,6 +248,8 @@ Vitest, four node-environment suites:
   trip is upcoming not overdue" case and its last-year mirror; legitimately-empty
   sections).
 
-125 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2, 23 for v1.3), all passing.
+133 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2, 23 for v1.3, 8 for v1.4),
+all passing. The security suite is 24 tests (16 through v1.3 + 8 icon/reorder tests
+in v1.4).
 
 The portable JSON payload is at `APP_FILE_VERSION = 3` (adds `status_overrides`).

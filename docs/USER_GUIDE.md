@@ -40,7 +40,7 @@ adjustments, and the tier table.
 
 ### Trip attention lists
 
-Above the program cards the dashboard shows two compact trip lists so nothing slips
+Below the program cards the dashboard shows two compact trip lists so nothing slips
 through the cracks:
 
 - **Needs Update — Past Trips Not Marked Complete.** Any trip whose dates have

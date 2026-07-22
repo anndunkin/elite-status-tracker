@@ -3,6 +3,41 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-07-22
+
+### Changed
+- **Dashboard layout reorder.** The **program-status cards** are now the first
+  thing you see under the year toggle; the **"Needs Update"** and **"Upcoming
+  Trips"** panels have moved to *below* the card grid. The year toggle and the
+  off-year banner are unchanged and still apply to the whole page. This is a
+  presentation-only change — no data, projection, or trip-classification logic was
+  touched.
+
+### Fixed
+- **Custom app icon now shows on the running app, its window, and the Windows
+  taskbar** — not just on the installer and desktop shortcut. The root cause was
+  that `createWindow()` never passed an `icon` option to Electron's
+  `BrowserWindow`, so Windows fell back to the default Electron icon once the app
+  was running. The window now receives a correctly resolved icon path (dev vs.
+  packaged), the `assets/` folder ships into the packaged app's `resources/` via
+  electron-builder `extraResources`, and `app.setAppUserModelId(...)` is set early
+  on Windows so the taskbar associates the process with the app's own identity.
+
+### Documentation
+- Audited and refreshed `README.md`, `docs/USER_GUIDE.md`, and `docs/TECHNICAL.md`
+  for accumulated drift across v1.1–v1.4 (three-part status, card earnings, manual
+  status overrides, generalized lifetime status, Delta Million Miler, the v1.3
+  year toggle / trip panels, and the current dashboard ordering), and documented
+  the new icon-resolution/packaging mechanism.
+
+### Testing
+- Extended `tests/security.test.ts` with icon-path-resolution coverage
+  (fixed-constant path, dev/packaged containment within the assets directory, no
+  attacker-controlled input, `BrowserWindow` icon option + `setAppUserModelId`
+  wiring) and a regression note that the dashboard reorder adds no IPC/data-access
+  surface. Security suite grew from 16 to 24 tests; full suite 125 → 133, all
+  passing.
+
 ## [1.3.0] — 2026-07-22
 
 ### Added

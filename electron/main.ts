@@ -18,10 +18,22 @@ import type {
 } from './types';
 import { haversineMiles, lookupAirport } from './airports';
 import { viewYearToDate } from './rules';
+import { resolveIconPath } from './iconPath';
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+const APP_USER_MODEL_ID = 'com.dunkinglobal.elitestatustracker';
+
 let currentDbPath = '';
+
+/** Resolve the window/taskbar icon for the current dev-vs-packaged environment. */
+function appIconPath(): string {
+  return resolveIconPath({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    dirname: __dirname,
+  });
+}
 
 function defaultDbPath(): string {
   return path.join(app.getPath('userData'), 'elite-status-tracker.db');
@@ -37,6 +49,7 @@ function logError(msg: string): void {
 function createWindow(): void {
   const win = new BrowserWindow({
     title: 'Elite Status Tracker',
+    icon: appIconPath(),
     width: 1360,
     height: 860,
     minWidth: 960,
@@ -103,6 +116,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // Required on Windows so the taskbar associates the running process with the
+  // app's own icon/identity (and groups pinned shortcuts) instead of falling
+  // back to Electron's default. Must run before the first window is created.
+  if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
   currentDbPath = defaultDbPath();
   openDatabaseAt(currentDbPath);
   createWindow();
