@@ -1,0 +1,75 @@
+import { describe, it, expect } from 'vitest';
+import { seededDb, emptyDb } from './helpers';
+import { computeProjections, tripCreate } from '../electron/database';
+import { qualifiesForTier, programYearOf, isLeapYear, currentProgramYear, sumMetrics } from '../electron/rules';
+
+describe('empty database', () => {
+  it('projects programs with zero totals and no tier', () => {
+    // empty schema has no programs seeded, so projections is []
+    const db = emptyDb();
+    expect(computeProjections(db)).toEqual([]);
+  });
+});
+
+describe('zero / negative / missing values', () => {
+  it('zero threshold is always met', () => {
+    expect(qualifiesForTier({ x: 0 }, [{ metric: 'x', threshold: 0 }])).toBe(true);
+  });
+  it('missing metric counts as zero', () => {
+    expect(qualifiesForTier({}, [{ metric: 'x', threshold: 1 }])).toBe(false);
+    expect(qualifiesForTier({}, [{ metric: 'x', threshold: 0 }])).toBe(true);
+  });
+  it('empty requirement list never qualifies', () => {
+    expect(qualifiesForTier({ x: 999 }, [])).toBe(false);
+  });
+  it('sumMetrics ignores NaN', () => {
+    expect(sumMetrics([{ a: NaN as unknown as number }, { a: 5 }])).toEqual({ a: 5 });
+  });
+});
+
+describe('AA status-year boundaries', () => {
+  it('Feb 28 belongs to the prior status year', () => {
+    expect(programYearOf('2026-02-28', 'aa_status_year')).toBe(2025);
+  });
+  it('Feb 29 on a leap year belongs to prior status year', () => {
+    expect(isLeapYear(2028)).toBe(true);
+    expect(programYearOf('2028-02-29', 'aa_status_year')).toBe(2027);
+  });
+  it('Mar 1 starts the new status year', () => {
+    expect(programYearOf('2026-03-01', 'aa_status_year')).toBe(2026);
+  });
+  it('Dec 31 stays in the same status year', () => {
+    expect(programYearOf('2026-12-31', 'aa_status_year')).toBe(2026);
+  });
+});
+
+describe('leap year detection', () => {
+  it.each([
+    [2000, true], [2024, true], [2028, true],
+    [1900, false], [2023, false], [2100, false],
+  ])('isLeapYear(%i) === %s', (y, expected) => {
+    expect(isLeapYear(y)).toBe(expected);
+  });
+});
+
+describe('one tier away', () => {
+  it('projects the next tier and its requirements', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'AA just under Plat', start_date: '2026-06-01', status: 'completed',
+      entries: [{ program_id: 'aa', is_estimate: false, metric_values: { points: 40000 } }],
+    });
+    const proj = computeProjections(db, new Date('2026-06-15T00:00:00Z'));
+    const aa = proj.find(p => p.program.id === 'aa')!;
+    expect(aa.nextTier).toBeTruthy();
+    expect(aa.nextTierRequirements?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('large totals', () => {
+  it('handles very large metric values without overflow', () => {
+    const big = 5_000_000;
+    expect(qualifiesForTier({ points: big }, [{ metric: 'points', threshold: 200000 }])).toBe(true);
+    expect(currentProgramYear(new Date('2026-07-22'), 'calendar')).toBe(2026);
+  });
+});

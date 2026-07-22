@@ -1,0 +1,64 @@
+# Elite Status Tracker
+
+A desktop app for tracking progress toward airline and hotel elite status across
+multiple loyalty programs. It records both **planned/booked** travel (estimates)
+and **completed** travel (actuals), sums each program's qualifying metrics within
+the correct program year, and shows current vs. projected tier status against the
+current-year thresholds. A quarterly reminder prompts you to re-verify the tier
+rules against each program's published source.
+
+Built with **Electron + React + TypeScript + Vite** and a local **SQLite**
+database (better-sqlite3). All data stays on your machine.
+
+## Tracked programs
+
+Airlines: American AAdvantage, Delta SkyMiles, Alaska / Atmos Rewards,
+United MileagePlus.
+Hotels: Hilton Honors, Marriott Bonvoy, IHG One Rewards, World of Hyatt.
+
+Lapsed / reference-only (historical activity retained): Omni Select Guest,
+Starwood Preferred Guest, Fairmont President's Club, Virgin Atlantic Flying Club.
+
+## Screens
+
+- **Dashboard** — one card per active program: current tier, projected tier,
+  running totals, and a progress bar toward the next tier.
+- **Trips** — list, add, and edit trips. Each trip can carry multiple per-program
+  credit entries (marked estimate or actual) and optional flight segments with
+  automatic great-circle mileage from IATA airport codes.
+- **Programs** — tier tables for each program, full rule-version history, and the
+  last-activity dates for lapsed programs.
+- **Manage Rules** — edit tier thresholds; saving creates a new rule version
+  (history is preserved) and re-projects your status.
+- **Settings** — light/dark theme, portable data file management (New / Open /
+  Save a copy / Export JSON / Import JSON), and the quarterly review status.
+
+## Development
+
+```bash
+npm install
+npm run dev          # Vite + Electron in watch mode
+npm test             # vitest (security / validation / boundary / functionality)
+npm run build        # renderer + electron main
+```
+
+## Building the Windows installer
+
+```bash
+npm run electron:build          # produces dist-installer/*.exe (+ .zip)
+bash build/sign.sh              # code-signs the installer with the self-signed cert
+```
+
+The native `better_sqlite3.node` for Windows is injected from
+`prebuilt-win32-x64/` by `scripts/afterPack.js` during packaging (no native
+rebuild required).
+
+## Data & privacy
+
+The database file lives in your user-data directory by default. Use
+**Settings → Save a copy as…** to keep a portable `.db`, or **Export JSON** for a
+human-readable, versioned snapshot that **Import JSON** can restore.
+
+## License
+
+Private. © Ann Dunkin / Dunkin Global Advisors.

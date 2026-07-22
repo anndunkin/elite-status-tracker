@@ -1,0 +1,67 @@
+{
+  "hh": {
+    "trips": 157,
+    "adjustments": 0,
+    "last_activity": 0
+  },
+  "dl": {
+    "trips": 168,
+    "adjustments": 9,
+    "last_activity": 0
+  },
+  "as": {
+    "trips": 58,
+    "adjustments": 1,
+    "last_activity": 0
+  },
+  "ih": {
+    "trips": 15,
+    "adjustments": 0,
+    "last_activity": 0
+  },
+  "other": {
+    "trips": 2,
+    "adjustments": 0,
+    "last_activity": 0
+  },
+  "mb": {
+    "trips": 159,
+    "adjustments": 22,
+    "last_activity": 0
+  },
+  "aa": {
+    "trips": 127,
+    "adjustments": 26,
+    "last_activity": 0
+  },
+  "wh": {
+    "trips": 5,
+    "adjustments": 3,
+    "last_activity": 8
+  },
+  "ua": {
+    "trips": 8,
+    "adjustments": 3,
+    "last_activity": 0
+  },
+  "omni": {
+    "trips": 0,
+    "adjustments": 0,
+    "last_activity": 11
+  },
+  "starwood": {
+    "trips": 0,
+    "adjustments": 0,
+    "last_activity": 4
+  },
+  "fairmont": {
+    "trips": 0,
+    "adjustments": 0,
+    "last_activity": 11
+  },
+  "va": {
+    "trips": 0,
+    "adjustments": 0,
+    "last_activity": 8
+  }
+}

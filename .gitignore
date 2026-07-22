@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-installer/
+electron/dist/
+*.log
+.env
+*.db
+.DS_Store
+certs/signing.key
+certs/signing.pfx
+build/signing.key
+
+*.tsbuildinfo
