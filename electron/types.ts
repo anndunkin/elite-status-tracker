@@ -98,6 +98,64 @@ export interface RuleRefreshLog {
   next_check_due: string;
 }
 
+// ─── Lifetime status / mileage & card-earnings (v1.1) ──────────────────────────
+
+/** A permanent tier held independent of annual re-qualification (e.g. Hilton Lifetime Diamond). */
+export interface ProgramLifetimeStatus {
+  program_id: string;
+  tier_name: string;
+  achieved_date: string | null;
+  notes: string | null;
+}
+
+export interface LifetimeMileageMilestone {
+  label: string;
+  threshold: number;
+}
+
+/** Row as stored: milestones is a JSON string. */
+export interface ProgramLifetimeMileageRow {
+  program_id: string;
+  baseline_miles: number;
+  baseline_date: string;
+  milestones: string;
+}
+
+/** Computed view: current lifetime miles = baseline + accrued flown miles since baseline_date. */
+export interface ProgramLifetimeMileageView {
+  program_id: string;
+  baseline_miles: number;
+  baseline_date: string;
+  milestones: LifetimeMileageMilestone[];
+  accruedSinceBaseline: number;
+  currentMiles: number;
+  nextMilestone: LifetimeMileageMilestone | null;
+  milesToNext: number | null;
+}
+
+export type CardMetricKey = 'mqd' | 'points' | 'nights';
+
+/** Manual credit-card-driven elite qualifying credit, dated so it buckets by program-year. */
+export interface CardEarningEntry {
+  id: number;
+  program_id: string;
+  entry_date: string;
+  metric_key: string;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface CardEarningInput {
+  program_id: string;
+  entry_date: string;
+  metric_key: string;
+  amount: number;
+  notes?: string | null;
+}
+
+export type CardEarningUpdate = Partial<CardEarningInput>;
+
 // ─── Input / create shapes ────────────────────────────────────────────────────
 
 export interface TripEntryInput {
@@ -139,10 +197,25 @@ export interface TripWithDetails extends Trip {
 export interface ProgramProjection {
   program: Program;
   program_year: number;
+  // v1.0.0 compat fields (currentTotals/currentTier == year-to-date actuals/tier).
   currentTotals: Record<string, number>;
   projectedTotals: Record<string, number>;
   currentTier: string | null;
   projectedTier: string | null;
+  // v1.1 three-part status ─────────────────────────────────────────────────────
+  // "Current": tier actually held now, from the most recent completed program-year.
+  heldTier: string | null;
+  heldFromYear: number | null;
+  heldTotals: Record<string, number>;
+  // "Year-to-date": actual progress within the current in-progress program-year.
+  ytdTotals: Record<string, number>;
+  ytdTier: string | null;
+  // Lifetime status floor: displayed current tier never drops below a lifetime tier.
+  lifetimeTier: string | null;
+  currentStatusTier: string | null; // MAX(heldTier, lifetimeTier)
+  lifetimeStatus: ProgramLifetimeStatus | null;
+  lifetimeMileage: ProgramLifetimeMileageView | null;
+  // Progress toward next tier (headline gauge, based on projected totals).
   nextTier: string | null;
   nextTierRequirements: TierRequirement[] | null;
   tiers: Array<{ tier_name: string; tier_order: number; requirements: TierRequirement[] }>;
@@ -150,7 +223,7 @@ export interface ProgramProjection {
 
 // ─── File payload (portable snapshot + JSON export/import) ──────────────────────
 
-export const APP_FILE_VERSION = 1;
+export const APP_FILE_VERSION = 2;
 
 export interface AppFilePayload {
   version: number;
@@ -161,6 +234,9 @@ export interface AppFilePayload {
   trips: Array<Trip & { entries: TripProgramEntry[]; segments: TripSegment[] }>;
   adjustments: ProgramYearAdjustment[];
   last_activity: ProgramLastActivity[];
+  lifetime_status: ProgramLifetimeStatus[];
+  lifetime_mileage: ProgramLifetimeMileageRow[];
+  card_earnings: CardEarningEntry[];
 }
 
 export interface FileResult {
@@ -183,6 +259,18 @@ export interface WindowApi {
     createRuleVersion: (programId: string, effective_date: string, source_notes: string,
       tiers: Array<{ tier_name: string; tier_order: number; requirements: TierRequirement[] }>) => Promise<number>;
     lastActivity: () => Promise<ProgramLastActivity[]>;
+  };
+  lifetime: {
+    status: () => Promise<ProgramLifetimeStatus[]>;
+    setStatus: (data: ProgramLifetimeStatus) => Promise<ProgramLifetimeStatus>;
+    clearStatus: (programId: string) => Promise<boolean>;
+    mileage: () => Promise<ProgramLifetimeMileageView[]>;
+  };
+  cardEarnings: {
+    getAll: () => Promise<CardEarningEntry[]>;
+    create: (data: CardEarningInput) => Promise<CardEarningEntry>;
+    update: (id: number, data: CardEarningUpdate) => Promise<CardEarningEntry | null>;
+    delete: (id: number) => Promise<boolean>;
   };
   trips: {
     getAll: () => Promise<TripWithDetails[]>;

@@ -4,9 +4,13 @@ import type {
   Program, ProgramTier, ProgramRuleVersion, ProgramYearAdjustment, ProgramLastActivity,
   Trip, TripSegment, TripProgramEntry, TripCreate, TripUpdate, TripWithDetails,
   TierRequirement, ProgramProjection, AppFilePayload,
+  ProgramLifetimeStatus, ProgramLifetimeMileageRow, ProgramLifetimeMileageView,
+  LifetimeMileageMilestone, CardEarningEntry, CardEarningInput, CardEarningUpdate,
 } from './types';
 import { APP_FILE_VERSION } from './types';
-import { SEED_PROGRAMS, OTHER_PROGRAM, SEED_RULES } from './programsSeed';
+import {
+  SEED_PROGRAMS, OTHER_PROGRAM, SEED_RULES, SEED_LIFETIME_STATUS, SEED_LIFETIME_MILEAGE,
+} from './programsSeed';
 import {
   highestQualifiedTier, nextTierAbove, currentProgramYear, programYearOf, sumMetrics,
 } from './rules';
@@ -129,6 +133,30 @@ export function initSchema(database: Database.Database): void {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS program_lifetime_status (
+      program_id TEXT PRIMARY KEY REFERENCES programs(id),
+      tier_name TEXT NOT NULL,
+      achieved_date TEXT,
+      notes TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS program_lifetime_mileage (
+      program_id TEXT PRIMARY KEY REFERENCES programs(id),
+      baseline_miles REAL NOT NULL,
+      baseline_date TEXT NOT NULL,
+      milestones TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS card_earnings_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      program_id TEXT NOT NULL REFERENCES programs(id),
+      entry_date TEXT NOT NULL,
+      metric_key TEXT NOT NULL,
+      amount REAL NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 
@@ -173,6 +201,15 @@ export function seedIfFresh(database: Database.Database): void {
           VALUES (?, ?, ?, ?)`).run(rvId, t.tier_name, t.tier_order, JSON.stringify(t.requirements));
       }
     }
+    for (const ls of SEED_LIFETIME_STATUS) {
+      database.prepare(`INSERT OR IGNORE INTO program_lifetime_status (program_id, tier_name, achieved_date, notes)
+        VALUES (?, ?, ?, ?)`).run(ls.program_id, ls.tier_name, ls.achieved_date, ls.notes);
+    }
+    for (const lm of SEED_LIFETIME_MILEAGE) {
+      database.prepare(`INSERT OR IGNORE INTO program_lifetime_mileage (program_id, baseline_miles, baseline_date, milestones)
+        VALUES (?, ?, ?, ?)`).run(lm.program_id, lm.baseline_miles, lm.baseline_date, JSON.stringify(lm.milestones));
+    }
+
     // Historical trip / adjustment / last-activity data (V1 seed, isolated).
     seedHistoricalData(database);
 
@@ -256,6 +293,110 @@ export function lastActivityGetAll(database: Database.Database): ProgramLastActi
 
 export function adjustmentsGetAll(database: Database.Database): ProgramYearAdjustment[] {
   return database.prepare('SELECT * FROM program_year_adjustments ORDER BY program_year DESC, program_id').all() as ProgramYearAdjustment[];
+}
+
+// ─── Lifetime status ────────────────────────────────────────────────────────────
+
+export function lifetimeStatusGetAll(database: Database.Database): ProgramLifetimeStatus[] {
+  return database.prepare('SELECT * FROM program_lifetime_status').all() as ProgramLifetimeStatus[];
+}
+
+export function lifetimeStatusSet(database: Database.Database, data: ProgramLifetimeStatus): ProgramLifetimeStatus {
+  if (!programGetById(database, data.program_id)) throw new Error('Unknown program');
+  if (!data.tier_name?.trim()) throw new Error('Lifetime tier name is required');
+  database.prepare(`INSERT INTO program_lifetime_status (program_id, tier_name, achieved_date, notes)
+    VALUES (@program_id, @tier_name, @achieved_date, @notes)
+    ON CONFLICT(program_id) DO UPDATE SET
+      tier_name = excluded.tier_name, achieved_date = excluded.achieved_date, notes = excluded.notes`)
+    .run({
+      program_id: data.program_id, tier_name: data.tier_name.trim(),
+      achieved_date: data.achieved_date ?? null, notes: data.notes ?? null,
+    });
+  return database.prepare('SELECT * FROM program_lifetime_status WHERE program_id = ?').get(data.program_id) as ProgramLifetimeStatus;
+}
+
+export function lifetimeStatusClear(database: Database.Database, programId: string): boolean {
+  return database.prepare('DELETE FROM program_lifetime_status WHERE program_id = ?').run(programId).changes > 0;
+}
+
+// ─── Lifetime mileage (Million Miler) ────────────────────────────────────────────
+
+/** Flown miles accrued from completed segments of the given program after baseline_date. */
+export function accruedLifetimeMiles(database: Database.Database, programId: string, baselineDate: string): number {
+  const row = database.prepare(`
+    SELECT COALESCE(SUM(s.distance_miles), 0) AS miles
+    FROM trip_segments s
+    JOIN trips t ON t.id = s.trip_id
+    WHERE s.program_id = ? AND t.status = 'completed'
+      AND s.distance_miles IS NOT NULL AND t.start_date > ?`).get(programId, baselineDate) as { miles: number };
+  return row.miles ?? 0;
+}
+
+export function lifetimeMileageGetAll(database: Database.Database): ProgramLifetimeMileageView[] {
+  const rows = database.prepare('SELECT * FROM program_lifetime_mileage').all() as ProgramLifetimeMileageRow[];
+  return rows.map(r => toMileageView(database, r));
+}
+
+function toMileageView(database: Database.Database, r: ProgramLifetimeMileageRow): ProgramLifetimeMileageView {
+  let milestones: LifetimeMileageMilestone[] = [];
+  try { milestones = JSON.parse(r.milestones) as LifetimeMileageMilestone[]; } catch { /* ignore */ }
+  milestones = [...milestones].sort((a, b) => a.threshold - b.threshold);
+  const accruedSinceBaseline = accruedLifetimeMiles(database, r.program_id, r.baseline_date);
+  const currentMiles = r.baseline_miles + accruedSinceBaseline;
+  const nextMilestone = milestones.find(m => m.threshold > currentMiles) ?? null;
+  return {
+    program_id: r.program_id,
+    baseline_miles: r.baseline_miles,
+    baseline_date: r.baseline_date,
+    milestones,
+    accruedSinceBaseline,
+    currentMiles,
+    nextMilestone,
+    milesToNext: nextMilestone ? nextMilestone.threshold - currentMiles : null,
+  };
+}
+
+// ─── Card-earnings entries ────────────────────────────────────────────────────
+
+export function cardEarningsGetAll(database: Database.Database): CardEarningEntry[] {
+  return database.prepare('SELECT * FROM card_earnings_entries ORDER BY entry_date DESC, id DESC').all() as CardEarningEntry[];
+}
+
+function validateCardEarning(database: Database.Database, program_id: string, entry_date: string, metric_key: string, amount: number): void {
+  if (!programGetById(database, program_id)) throw new Error('Unknown program');
+  if (!entry_date?.trim()) throw new Error('Entry date is required');
+  if (!metric_key?.trim()) throw new Error('Metric key is required');
+  if (typeof amount !== 'number' || Number.isNaN(amount)) throw new Error('Amount must be a number');
+}
+
+export function cardEarningCreate(database: Database.Database, data: CardEarningInput): CardEarningEntry {
+  validateCardEarning(database, data.program_id, data.entry_date, data.metric_key, data.amount);
+  const res = database.prepare(`
+    INSERT INTO card_earnings_entries (program_id, entry_date, metric_key, amount, notes)
+    VALUES (?, ?, ?, ?, ?)`).run(
+    data.program_id, data.entry_date.trim(), data.metric_key.trim(), data.amount, data.notes ?? null);
+  return database.prepare('SELECT * FROM card_earnings_entries WHERE id = ?').get(Number(res.lastInsertRowid)) as CardEarningEntry;
+}
+
+export function cardEarningUpdate(database: Database.Database, id: number, data: CardEarningUpdate): CardEarningEntry | null {
+  const existing = database.prepare('SELECT * FROM card_earnings_entries WHERE id = ?').get(id) as CardEarningEntry | undefined;
+  if (!existing) return null;
+  const merged = {
+    program_id: data.program_id ?? existing.program_id,
+    entry_date: (data.entry_date ?? existing.entry_date),
+    metric_key: (data.metric_key ?? existing.metric_key),
+    amount: data.amount !== undefined ? data.amount : existing.amount,
+    notes: data.notes !== undefined ? data.notes : existing.notes,
+  };
+  validateCardEarning(database, merged.program_id, merged.entry_date, merged.metric_key, merged.amount);
+  database.prepare(`UPDATE card_earnings_entries
+    SET program_id=@program_id, entry_date=@entry_date, metric_key=@metric_key, amount=@amount, notes=@notes
+    WHERE id=@id`).run({ ...merged, entry_date: merged.entry_date.trim(), metric_key: merged.metric_key.trim(), id });
+  return database.prepare('SELECT * FROM card_earnings_entries WHERE id = ?').get(id) as CardEarningEntry;
+}
+
+export function cardEarningDelete(database: Database.Database, id: number): boolean {
+  return database.prepare('DELETE FROM card_earnings_entries WHERE id = ?').run(id).changes > 0;
 }
 
 // ─── Trips ────────────────────────────────────────────────────────────────────
@@ -349,42 +490,81 @@ export function computeProjections(database: Database.Database, today: Date = ne
   const programs = programsGetAll(database).filter(p => p.is_active === 1);
   const trips = tripGetAll(database);
   const adjustments = adjustmentsGetAll(database);
+  const cardEarnings = cardEarningsGetAll(database);
+  const lifetimeStatuses = lifetimeStatusGetAll(database);
+  const lifetimeMileage = lifetimeMileageGetAll(database);
   const result: ProgramProjection[] = [];
 
   for (const program of programs) {
     const tiers = currentTiers(database, program.id);
     const programYear = currentProgramYear(today, program.year_type);
 
-    const actualMaps: Array<Record<string, number>> = [];
-    const estimateMaps: Array<Record<string, number>> = [];
+    // Bucket every actual/estimate metric map by the program-year it belongs to.
+    const actualByYear = new Map<number, Array<Record<string, number>>>();
+    const estimateByYear = new Map<number, Array<Record<string, number>>>();
+    const pushYear = (map: Map<number, Array<Record<string, number>>>, year: number, mv: Record<string, number>) => {
+      if (!map.has(year)) map.set(year, []);
+      map.get(year)!.push(mv);
+    };
 
     for (const trip of trips) {
-      if (programYearOf(trip.start_date, program.year_type) !== programYear) continue;
+      const year = programYearOf(trip.start_date, program.year_type);
       for (const e of trip.entries) {
         if (e.program_id !== program.id) continue;
         const mv = JSON.parse(e.metric_values) as Record<string, number>;
-        if (e.is_estimate === 0 && trip.status === 'completed') {
-          actualMaps.push(mv);
-        } else if (e.is_estimate === 1 && (trip.status === 'planned' || trip.status === 'booked')) {
-          estimateMaps.push(mv);
-        }
+        if (e.is_estimate === 0 && trip.status === 'completed') pushYear(actualByYear, year, mv);
+        else if (e.is_estimate === 1 && (trip.status === 'planned' || trip.status === 'booked')) pushYear(estimateByYear, year, mv);
       }
     }
     for (const adj of adjustments) {
-      if (adj.program_id !== program.id || adj.program_year !== programYear) continue;
-      actualMaps.push(JSON.parse(adj.metric_values) as Record<string, number>);
+      if (adj.program_id !== program.id) continue;
+      pushYear(actualByYear, adj.program_year, JSON.parse(adj.metric_values) as Record<string, number>);
+    }
+    for (const ce of cardEarnings) {
+      if (ce.program_id !== program.id) continue;
+      const year = programYearOf(ce.entry_date, program.year_type);
+      pushYear(actualByYear, year, { [ce.metric_key]: ce.amount });
     }
 
-    const currentTotals = sumMetrics(actualMaps);
-    const projectedTotals = sumMetrics([...actualMaps, ...estimateMaps]);
-    const currentTier = highestQualifiedTier(currentTotals, tiers);
+    const currentActuals = actualByYear.get(programYear) ?? [];
+    const currentEstimates = estimateByYear.get(programYear) ?? [];
+    const ytdTotals = sumMetrics(currentActuals);
+    const projectedTotals = sumMetrics([...currentActuals, ...currentEstimates]);
+    const ytdTier = highestQualifiedTier(ytdTotals, tiers);
     const projectedTier = highestQualifiedTier(projectedTotals, tiers);
-    const nextTier = nextTierAbove(currentTier, tiers);
+
+    // "Current": tier held now, from the most recent completed (closed) program-year.
+    const priorYears = [...actualByYear.keys()].filter(y => y < programYear).sort((a, b) => b - a);
+    const heldFromYear = priorYears.length ? priorYears[0] : null;
+    const heldTotals = heldFromYear != null ? sumMetrics(actualByYear.get(heldFromYear)!) : {};
+    const heldTier = heldFromYear != null ? highestQualifiedTier(heldTotals, tiers) : null;
+
+    // Lifetime status floor: displayed current tier never drops below a lifetime tier.
+    const lifetimeStatus = lifetimeStatuses.find(l => l.program_id === program.id) ?? null;
+    const lifetimeTierObj = lifetimeStatus ? tiers.find(t => t.tier_name === lifetimeStatus.tier_name) ?? null : null;
+    let currentStatusTier: string | null = heldTier?.tier_name ?? null;
+    if (lifetimeStatus) {
+      const heldOrder = heldTier?.tier_order ?? -1;
+      const lifeOrder = lifetimeTierObj?.tier_order ?? Number.POSITIVE_INFINITY;
+      currentStatusTier = (lifeOrder >= heldOrder) ? lifetimeStatus.tier_name : (heldTier?.tier_name ?? null);
+    }
+
+    const nextTier = nextTierAbove(ytdTier, tiers);
 
     result.push({
-      program, program_year: programYear, currentTotals, projectedTotals,
-      currentTier: currentTier?.tier_name ?? null,
+      program, program_year: programYear,
+      currentTotals: ytdTotals, projectedTotals,
+      currentTier: ytdTier?.tier_name ?? null,
       projectedTier: projectedTier?.tier_name ?? null,
+      heldTier: heldTier?.tier_name ?? null,
+      heldFromYear,
+      heldTotals,
+      ytdTotals,
+      ytdTier: ytdTier?.tier_name ?? null,
+      lifetimeTier: lifetimeStatus?.tier_name ?? null,
+      currentStatusTier,
+      lifetimeStatus,
+      lifetimeMileage: lifetimeMileage.find(m => m.program_id === program.id) ?? null,
       nextTier: nextTier?.tier_name ?? null,
       nextTierRequirements: nextTier?.requirements ?? null,
       tiers,
@@ -429,16 +609,22 @@ export function buildFilePayload(database: Database.Database): AppFilePayload {
   const trips = tripGetAll(database);
   const adjustments = adjustmentsGetAll(database);
   const last_activity = lastActivityGetAll(database);
+  const lifetime_status = lifetimeStatusGetAll(database);
+  const lifetime_mileage = database.prepare('SELECT * FROM program_lifetime_mileage').all() as ProgramLifetimeMileageRow[];
+  const card_earnings = cardEarningsGetAll(database);
   return {
     version: APP_FILE_VERSION, savedAt: new Date().toISOString(),
     programs, rule_versions, tiers, trips, adjustments, last_activity,
+    lifetime_status, lifetime_mileage, card_earnings,
   };
 }
 
 export function importFilePayload(database: Database.Database, payload: AppFilePayload): void {
   if (!payload || payload.version !== APP_FILE_VERSION) throw new Error('Unsupported or invalid file version');
   const tx = database.transaction(() => {
-    database.exec(`DELETE FROM trip_segments; DELETE FROM trip_program_entries; DELETE FROM trips;
+    database.exec(`DELETE FROM card_earnings_entries; DELETE FROM program_lifetime_mileage;
+      DELETE FROM program_lifetime_status;
+      DELETE FROM trip_segments; DELETE FROM trip_program_entries; DELETE FROM trips;
       DELETE FROM program_year_adjustments; DELETE FROM program_last_activity;
       DELETE FROM program_tiers; DELETE FROM program_rule_versions; DELETE FROM programs;`);
     for (const p of payload.programs) {
@@ -474,6 +660,18 @@ export function importFilePayload(database: Database.Database, payload: AppFileP
     for (const la of payload.last_activity) {
       database.prepare(`INSERT INTO program_last_activity (program_id,last_stay_date,notes)
         VALUES (?,?,?)`).run(la.program_id, la.last_stay_date ?? null, la.notes ?? null);
+    }
+    for (const ls of payload.lifetime_status ?? []) {
+      database.prepare(`INSERT INTO program_lifetime_status (program_id,tier_name,achieved_date,notes)
+        VALUES (?,?,?,?)`).run(ls.program_id, ls.tier_name, ls.achieved_date ?? null, ls.notes ?? null);
+    }
+    for (const lm of payload.lifetime_mileage ?? []) {
+      database.prepare(`INSERT INTO program_lifetime_mileage (program_id,baseline_miles,baseline_date,milestones)
+        VALUES (?,?,?,?)`).run(lm.program_id, lm.baseline_miles, lm.baseline_date, lm.milestones);
+    }
+    for (const ce of payload.card_earnings ?? []) {
+      database.prepare(`INSERT INTO card_earnings_entries (id,program_id,entry_date,metric_key,amount,notes,created_at)
+        VALUES (?,?,?,?,?,?,?)`).run(ce.id, ce.program_id, ce.entry_date, ce.metric_key, ce.amount, ce.notes ?? null, ce.created_at);
     }
     metaSet(database, 'is_seeded', '1');
   });

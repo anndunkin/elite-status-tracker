@@ -23,6 +23,18 @@ const api: WindowApi = {
   adjustments: {
     all: () => ipcRenderer.invoke('adjustments:all'),
   },
+  lifetime: {
+    status: () => ipcRenderer.invoke('lifetime:status'),
+    setStatus: (data) => ipcRenderer.invoke('lifetime:setStatus', data),
+    clearStatus: (programId) => ipcRenderer.invoke('lifetime:clearStatus', programId),
+    mileage: () => ipcRenderer.invoke('lifetime:mileage'),
+  },
+  cardEarnings: {
+    getAll: () => ipcRenderer.invoke('cardEarnings:getAll'),
+    create: (data) => ipcRenderer.invoke('cardEarnings:create', data),
+    update: (id, data) => ipcRenderer.invoke('cardEarnings:update', id, data),
+    delete: (id) => ipcRenderer.invoke('cardEarnings:delete', id),
+  },
   airports: {
     distance: (a, b) => ipcRenderer.invoke('airports:distance', a, b),
     lookup: (code) => ipcRenderer.invoke('airports:lookup', code),

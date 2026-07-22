@@ -32,6 +32,43 @@ export const OTHER_PROGRAM: SeedProgram = {
   id: 'other', name: 'Other / Unassigned', type: 'airline', is_active: 0, year_type: 'calendar', metric_keys: ['miles'], notes: 'Historical miles that could not be attributed to a specific airline.',
 };
 
+// ─── Lifetime status & lifetime-mileage seeds (v1.1) ──────────────────────────
+
+export interface SeedLifetimeStatus {
+  program_id: string;
+  tier_name: string;
+  achieved_date: string | null;
+  notes: string | null;
+}
+
+export const SEED_LIFETIME_STATUS: SeedLifetimeStatus[] = [
+  {
+    program_id: 'hh', tier_name: 'Diamond', achieved_date: null,
+    notes: 'Lifetime Diamond status — permanent, not re-earned annually.',
+  },
+];
+
+export interface SeedLifetimeMileage {
+  program_id: string;
+  baseline_miles: number;
+  baseline_date: string;
+  milestones: Array<{ label: string; threshold: number }>;
+}
+
+// Delta Million Miler: baseline read from the "2026" sheet's 3MM column
+// (2,004,496 base + per-trip increments = 2,032,832 as of the July "DC" trip).
+export const SEED_LIFETIME_MILEAGE: SeedLifetimeMileage[] = [
+  {
+    program_id: 'dl', baseline_miles: 2032832, baseline_date: '2026-07-01',
+    milestones: [
+      { label: '1,000,000 Miler', threshold: 1000000 },
+      { label: '2,000,000 Miler', threshold: 2000000 },
+      { label: '3,000,000 Miler', threshold: 3000000 },
+      { label: '5,000,000 Miler', threshold: 5000000 },
+    ],
+  },
+];
+
 export interface SeedTier {
   tier_name: string;
   tier_order: number;
@@ -103,7 +140,7 @@ export const SEED_RULES: SeedRuleSet[] = [
   },
   {
     program_id: 'mb', effective_date: '2026-01-01',
-    source_notes: 'https://www.screened.com/blog/marriott-bonvoy-elite-status-changes-2026/ | NOTE: Ambassador spend threshold conflicting across sources, $23K vs $25K — verify at next quarterly refresh.',
+    source_notes: 'https://www.screened.com/blog/marriott-bonvoy-elite-status-changes-2026/ | Ambassador: 100 nights AND $23,000 spend (confirmed 2026-07).',
     tiers: [
       { tier_name: 'Silver', tier_order: 1, requirements: [g('nights', 10, 0)] },
       { tier_name: 'Gold', tier_order: 2, requirements: [g('nights', 25, 0)] },

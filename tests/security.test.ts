@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { seededDb } from './helpers';
-import { tripCreate, tripGetAll, programGetById } from '../electron/database';
+import { tripCreate, tripGetAll, programGetById, cardEarningCreate, cardEarningsGetAll } from '../electron/database';
 
 const read = (rel: string) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf-8');
 
@@ -22,6 +22,15 @@ describe('SQL injection resistance (parameterized queries)', () => {
   it('does not interpolate program ids into SQL', () => {
     const db = seededDb();
     expect(programGetById(db, "aa' OR '1'='1")).toBeNull();
+  });
+
+  it('treats a malicious card-earnings note as literal data', () => {
+    const db = seededDb();
+    const evil = "note'); DROP TABLE card_earnings_entries;--";
+    const created = cardEarningCreate(db, { program_id: 'dl', entry_date: '2026-05-01', metric_key: 'mqd', amount: 100, notes: evil });
+    expect(created.notes).toBe(evil);
+    expect(cardEarningsGetAll(db).some(c => c.id === created.id)).toBe(true);
+    expect(() => db.prepare('SELECT COUNT(*) FROM card_earnings_entries').get()).not.toThrow();
   });
 });
 

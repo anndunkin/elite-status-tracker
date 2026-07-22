@@ -3,6 +3,35 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-07-22
+
+### Added
+- **Three-part status everywhere** — Dashboard and the new Program Detail page now
+  show **Current** (tier held now, from the most recently completed program-year,
+  floored by any lifetime status), **Year-to-date** (actuals in the current
+  program-year), and **Projected** (YTD plus planned/booked estimates).
+- **Clickable Dashboard cards** open a **Program Detail** page with the full numeric
+  breakdown, contributing trips (linking to trip edit), year adjustments, card-earnings
+  entries, the tier table, and any lifetime badge.
+- **Card Earnings screen** — manually log dated credit-card elite credits for the four
+  card-earning programs (Delta MQDs, American Loyalty Points, World of Hyatt nights,
+  Marriott Bonvoy nights) with full CRUD, filtering, and automatic bucketing into the
+  correct program-year for YTD/Projected (AA Mar 1–Feb window respected).
+- **Generic lifetime status** (`program_lifetime_status`) that floors the displayed
+  current tier. Seeded with **Hilton Honors lifetime Diamond**.
+- **Delta Million Miler tracking** (`program_lifetime_mileage`) toward 3,000,000 miles,
+  seeded with a baseline of **2,032,832 miles as of 2026-07-01**, accruing only from
+  completed Delta segments flown after the baseline. Shown on the Delta Dashboard card
+  and Program Detail as a section distinct from annual Medallion status.
+
+### Changed
+- **Marriott Bonvoy Ambassador** confirmed at **100 nights AND $23,000 spend**; the
+  "$23K vs $25K conflicting sources" flag has been removed.
+
+### Known data conflicts (still flagged for quarterly review)
+- **World of Hyatt Explorist** — night threshold reported as **20 vs 30** nights.
+  Seeded at 30; verify and update in Manage Rules.
+
 ## [1.0.0] — 2026-07-22
 
 ### Added

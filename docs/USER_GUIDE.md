@@ -2,7 +2,7 @@
 
 ## Installing
 
-1. Download `Elite Status Tracker Setup 1.0.0.exe` from the release page.
+1. Download `Elite Status Tracker Setup 1.1.0.exe` from the release page.
 2. Run it. Because the app is signed with a self-signed certificate, Windows
    SmartScreen may show a "Windows protected your PC" notice — click
    **More info → Run anyway**.
@@ -14,14 +14,44 @@ immediately.
 
 ## The Dashboard
 
-Each card is one program for the current status year. It shows:
+Each card is one program for the current status year. It shows three distinct
+status values:
 
-- **Now** — the tier you currently qualify for (completed trips + posted
-  adjustments only).
+- **Current** — the tier you actually hold right now, carried over from your most
+  recently completed program-year (and never dropping below any lifetime status,
+  such as Hilton lifetime Diamond).
+- **Year-to-date** — the tier your confirmed, posted activity in the current
+  program-year qualifies for (completed trips + posted adjustments + card earnings).
 - **Projected** — the tier you'd reach if all your planned and booked trips
   complete as estimated.
 - A **progress bar** toward the next tier, with the running totals and the
   requirement for that tier.
+
+**Click any card** to open its **Program Detail** page — a full breakdown of the
+metric totals behind each status value, the trips crediting toward the program
+this year (click **Edit** to jump straight to a trip), card-earnings entries, year
+adjustments, and the tier table.
+
+### Delta Million Miler
+
+The Delta card and Program Detail page also track lifetime (Million Miler) mileage
+toward 3,000,000 miles, separate from annual Medallion status. It starts from a
+baseline of 2,032,832 miles as of 2026-07-01 and grows as you log completed Delta
+flight segments flown after that date.
+
+## Card Earnings
+
+Some elite credit comes from credit-card spend rather than a specific trip. Use the
+**Card Earnings** screen to log those dated credits for the four card-earning
+programs — Delta (MQDs), American (Loyalty Points), World of Hyatt (nights), and
+Marriott Bonvoy (nights):
+
+1. Click **+ Add Entry**, pick the program, set the date and amount, and (optionally)
+   a note such as "Amex Platinum anniversary credit."
+2. **Save.** The entry is bucketed into the correct program-year by its date and
+   feeds directly into the Year-to-date and Projected status for that program.
+
+Entries can be filtered by program, edited, and deleted at any time.
 
 ## Adding a trip
 
@@ -54,13 +84,14 @@ Roughly every three months a banner reminds you to re-verify each program's tier
 rules against its official source. After checking, click **Mark reviewed** (in the
 banner or in Settings) to log the review and reset the timer for three months.
 
-Two thresholds are known to be uncertain and should be confirmed at your first
+One threshold is still known to be uncertain and should be confirmed at your next
 review:
 
-- **Marriott Bonvoy Ambassador** spend — seeded at **$23,000** ($23K vs $25K
-  across sources).
 - **World of Hyatt Explorist** nights — seeded at **30** (20 vs 30 across
   sources).
+
+> **Marriott Bonvoy Ambassador** is now confirmed at **100 nights AND $23,000
+> spend** and is no longer flagged.
 
 ## Managing your data
 

@@ -4,6 +4,8 @@ import { ThemeProvider, useTheme } from './theme';
 import Dashboard from './pages/Dashboard';
 import Trips from './pages/Trips';
 import Programs from './pages/Programs';
+import ProgramDetail from './pages/ProgramDetail';
+import CardEarnings from './pages/CardEarnings';
 import ManageRules from './pages/ManageRules';
 import Settings from './pages/Settings';
 import RefreshBanner from './components/RefreshBanner';
@@ -12,6 +14,7 @@ const NAV = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/trips', label: 'Trips' },
   { to: '/programs', label: 'Programs' },
+  { to: '/card-earnings', label: 'Card Earnings' },
   { to: '/rules', label: 'Manage Rules' },
   { to: '/settings', label: 'Settings' },
 ];
@@ -62,6 +65,8 @@ function Shell() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/trips" element={<Trips />} />
           <Route path="/programs" element={<Programs />} />
+          <Route path="/programs/:id" element={<ProgramDetail />} />
+          <Route path="/card-earnings" element={<CardEarnings />} />
           <Route path="/rules" element={<ManageRules />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

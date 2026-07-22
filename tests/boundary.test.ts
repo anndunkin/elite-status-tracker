@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { seededDb, emptyDb } from './helpers';
-import { computeProjections, tripCreate } from '../electron/database';
+import {
+  computeProjections, tripCreate, lifetimeMileageGetAll, accruedLifetimeMiles,
+} from '../electron/database';
 import { qualifiesForTier, programYearOf, isLeapYear, currentProgramYear, sumMetrics } from '../electron/rules';
 
 describe('empty database', () => {
@@ -63,6 +65,37 @@ describe('one tier away', () => {
     const aa = proj.find(p => p.program.id === 'aa')!;
     expect(aa.nextTier).toBeTruthy();
     expect(aa.nextTierRequirements?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('lifetime mileage boundaries', () => {
+  it('with no post-baseline segments, currentMiles equals the baseline', () => {
+    const db = seededDb();
+    expect(accruedLifetimeMiles(db, 'dl', '2026-07-01')).toBe(0);
+    const dl = lifetimeMileageGetAll(db).find(m => m.program_id === 'dl')!;
+    expect(dl.currentMiles).toBe(dl.baseline_miles);
+    expect(dl.nextMilestone?.threshold).toBe(3000000); // first threshold strictly above 2,032,832
+  });
+
+  it('a segment dated exactly on the baseline date does not accrue (strictly after)', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'On baseline', start_date: '2026-07-01', status: 'completed',
+      segments: [{ origin_airport: 'SEA', destination_airport: 'JFK', distance_miles: 2000, program_id: 'dl' }],
+    });
+    expect(accruedLifetimeMiles(db, 'dl', '2026-07-01')).toBe(0);
+  });
+
+  it('reaching the top milestone leaves no next milestone', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'Huge', start_date: '2026-08-01', status: 'completed',
+      segments: [{ origin_airport: 'SEA', destination_airport: 'NRT', distance_miles: 3_000_000, program_id: 'dl' }],
+    });
+    const dl = lifetimeMileageGetAll(db).find(m => m.program_id === 'dl')!;
+    expect(dl.currentMiles).toBeGreaterThan(5000000);
+    expect(dl.nextMilestone).toBeNull();
+    expect(dl.milesToNext).toBeNull();
   });
 });
 

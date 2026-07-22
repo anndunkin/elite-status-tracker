@@ -8,9 +8,12 @@ import {
   computeProjections, adjustmentsGetAll,
   refreshStatus, refreshLogCheck,
   buildFilePayload, importFilePayload,
+  lifetimeStatusGetAll, lifetimeStatusSet, lifetimeStatusClear, lifetimeMileageGetAll,
+  cardEarningsGetAll, cardEarningCreate, cardEarningUpdate, cardEarningDelete,
 } from './database';
 import type {
   TripCreate, TripUpdate, TierRequirement, AppFilePayload, FileResult,
+  ProgramLifetimeStatus, CardEarningInput, CardEarningUpdate,
 } from './types';
 import { haversineMiles, lookupAirport } from './airports';
 
@@ -132,6 +135,20 @@ ipcMain.handle('trips:delete', (_e, id: number) => tripDelete(getDatabase(), id)
 
 ipcMain.handle('projection:all', () => computeProjections(getDatabase()));
 ipcMain.handle('adjustments:all', () => adjustmentsGetAll(getDatabase()));
+
+// ─── Lifetime status / mileage ───────────────────────────────────────────────────
+
+ipcMain.handle('lifetime:status', () => lifetimeStatusGetAll(getDatabase()));
+ipcMain.handle('lifetime:setStatus', (_e, data: ProgramLifetimeStatus) => lifetimeStatusSet(getDatabase(), data));
+ipcMain.handle('lifetime:clearStatus', (_e, programId: string) => lifetimeStatusClear(getDatabase(), programId));
+ipcMain.handle('lifetime:mileage', () => lifetimeMileageGetAll(getDatabase()));
+
+// ─── Card earnings ──────────────────────────────────────────────────────────────
+
+ipcMain.handle('cardEarnings:getAll', () => cardEarningsGetAll(getDatabase()));
+ipcMain.handle('cardEarnings:create', (_e, data: CardEarningInput) => cardEarningCreate(getDatabase(), data));
+ipcMain.handle('cardEarnings:update', (_e, id: number, data: CardEarningUpdate) => cardEarningUpdate(getDatabase(), id, data));
+ipcMain.handle('cardEarnings:delete', (_e, id: number) => cardEarningDelete(getDatabase(), id));
 
 // ─── Airports ─────────────────────────────────────────────────────────────────
 

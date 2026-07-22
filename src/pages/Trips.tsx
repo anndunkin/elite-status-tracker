@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type {
   Program, TripWithDetails, TripCreate, TripStatus, TripEntryInput, SegmentInput,
 } from '../../electron/types';
@@ -24,6 +25,7 @@ export default function Trips() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [editing, setEditing] = useState<null | (Draft)>(null);
   const [error, setError] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const load = () => {
     window.api.trips.getAll().then(setTrips);
@@ -52,6 +54,17 @@ export default function Trips() {
       })),
     });
   };
+
+  useEffect(() => {
+    const editId = searchParams.get('edit');
+    if (!editId || editing) return;
+    const t = trips.find(x => String(x.id) === editId);
+    if (t) {
+      openEdit(t);
+      searchParams.delete('edit');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [trips, searchParams]);
 
   const save = async () => {
     if (!editing) return;
