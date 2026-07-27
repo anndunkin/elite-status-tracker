@@ -485,14 +485,39 @@ export function lifetimeStatusClear(database: Database.Database, programId: stri
 
 // ─── Lifetime mileage (Million Miler) ────────────────────────────────────────────
 
-/** Flown miles accrued from completed segments of the given program after baseline_date. */
+/**
+ * Flown miles accrued from completed segments of the given program after baseline_date.
+ *
+ * A segment counts toward a program's lifetime mileage if EITHER:
+ *   (a) the segment itself has an explicit program_id matching this program (legacy /
+ *       manually-tagged segments), OR
+ *   (b) the segment has no program_id set (the common case — the Trips.tsx segment editor
+ *       has no per-segment program dropdown) AND the trip it belongs to has a program credit
+ *       entry (trip_program_entries) for this program.
+ * These two conditions are mutually exclusive on program_id (explicit vs. empty), so a plain
+ * OR cannot double-count a given segment. The EXISTS subquery (rather than a JOIN to
+ * trip_program_entries) also guarantees no row multiplication if a trip somehow had more than
+ * one program-credit entry for the same program (e.g. one estimate + one actual row, which the
+ * `UNIQUE(trip_id, program_id, is_estimate)` constraint permits) — each segment is still only
+ * summed once.
+ */
 export function accruedLifetimeMiles(database: Database.Database, programId: string, baselineDate: string): number {
   const row = database.prepare(`
     SELECT COALESCE(SUM(s.distance_miles), 0) AS miles
     FROM trip_segments s
     JOIN trips t ON t.id = s.trip_id
-    WHERE s.program_id = ? AND t.status = 'completed'
-      AND s.distance_miles IS NOT NULL AND t.start_date > ?`).get(programId, baselineDate) as { miles: number };
+    WHERE t.status = 'completed'
+      AND s.distance_miles IS NOT NULL AND t.start_date > ?
+      AND (
+        s.program_id = ?
+        OR (
+          (s.program_id IS NULL OR s.program_id = '')
+          AND EXISTS (
+            SELECT 1 FROM trip_program_entries e
+            WHERE e.trip_id = t.id AND e.program_id = ?
+          )
+        )
+      )`).get(baselineDate, programId, programId) as { miles: number };
   return row.miles ?? 0;
 }
 
@@ -702,6 +727,20 @@ export function statusMultiplierForAA(tier: string | null | undefined): number {
   }
 }
 
+/**
+ * Sum `cost_usd` across a trip's segments for a given program, preferring segments explicitly
+ * tagged with that program_id, but falling back to ALL of the trip's segments when none are
+ * explicitly tagged (the common case, since the segment editor has no per-segment program
+ * picker). This avoids double-crediting a mixed-program trip (one where some segments ARE
+ * explicitly tagged for a different program) while still working for the untagged-segment case.
+ */
+function deriveSegmentCost(segments: TripSegment[], programId: string): number {
+  const taggedSegs = segments.filter(s => s.program_id === programId && typeof s.cost_usd === 'number');
+  const untaggedSegs = segments.filter(s => !s.program_id && typeof s.cost_usd === 'number');
+  const costSource = taggedSegs.length > 0 ? taggedSegs : untaggedSegs;
+  return costSource.reduce((sum, s) => sum + (s.cost_usd as number), 0);
+}
+
 export function computeProjections(database: Database.Database, today: Date = new Date()): ProgramProjection[] {
   const programs = programsGetAll(database).filter(p => p.is_active === 1);
   const trips = tripGetAll(database);
@@ -738,10 +777,14 @@ export function computeProjections(database: Database.Database, today: Date = ne
         if (e.program_id !== program.id) continue;
         let mv = JSON.parse(e.metric_values) as Record<string, number>;
         // Delta MQDs are derived automatically from segment cost when not explicitly entered.
+        // Segments are rarely tagged with an explicit program_id (Trips.tsx has no per-segment
+        // program dropdown), so prefer explicitly-tagged Delta segments if any exist, but fall
+        // back to ALL of the trip's segments when none are explicitly tagged — this is safe
+        // because we only reach this branch for a trip_program_entries row that IS for Delta
+        // (program.id === 'dl' here), so an untagged segment on this trip belongs to this
+        // credit unless some other segment was explicitly tagged for a different program.
         if (program.id === 'dl' && mv.mqd === undefined) {
-          const derivedMqd = trip.segments
-            .filter(s => s.program_id === 'dl' && typeof s.cost_usd === 'number')
-            .reduce((sum, s) => sum + (s.cost_usd as number), 0);
+          const derivedMqd = deriveSegmentCost(trip.segments, 'dl');
           if (derivedMqd > 0) mv = { ...mv, mqd: derivedMqd };
         }
         if (e.is_estimate === 0 && trip.status === 'completed') {
@@ -812,9 +855,7 @@ export function computeProjections(database: Database.Database, today: Date = ne
         // JSON round-trips (e.g. portable-file import/export) can turn a genuinely-absent
         // key into a stored `null`, which must be treated the same as `undefined` here.
         if (mv.points !== undefined && mv.points !== null) return mv;
-        const costs = trip.segments
-          .filter(s => s.program_id === 'aa' && typeof s.cost_usd === 'number')
-          .reduce((sum, s) => sum + (s.cost_usd as number), 0);
+        const costs = deriveSegmentCost(trip.segments, 'aa');
         if (costs <= 0) return mv;
         const derivedPoints = Math.round(costs * multiplier);
         if (derivedPoints <= 0) return mv;

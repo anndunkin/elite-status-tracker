@@ -8,7 +8,7 @@ import { displayMetricKey, statusMultiplierForAAPreview } from '../lib/metricLab
 const STATUSES: TripStatus[] = ['planned', 'booked', 'completed'];
 
 interface EntryDraft { program_id: string; is_estimate: boolean; metric_values: Record<string, number>; card_bonus_notes: string; }
-interface SegDraft { origin_airport: string; destination_airport: string; distance_miles: number | null; cost_usd: number | null; program_id: string; fare_class: string; }
+interface SegDraft { origin_airport: string; destination_airport: string; distance_miles: number | null; cost_usd: number | null; program_id: string; }
 type Draft = Omit<TripCreate, 'entries' | 'segments'> & { id?: number; entries: EntryDraft[]; segments: SegDraft[] };
 
 const emptyDraft = (): Draft => ({
@@ -51,7 +51,7 @@ export default function Trips() {
       })),
       segments: t.segments.map(s => ({
         origin_airport: s.origin_airport ?? '', destination_airport: s.destination_airport ?? '',
-        distance_miles: s.distance_miles, cost_usd: s.cost_usd, program_id: s.program_id ?? '', fare_class: s.fare_class ?? '',
+        distance_miles: s.distance_miles, cost_usd: s.cost_usd, program_id: s.program_id ?? '',
       })),
     });
   };
@@ -89,7 +89,7 @@ export default function Trips() {
         .map<SegmentInput>(s => ({
           origin_airport: s.origin_airport || null, destination_airport: s.destination_airport || null,
           distance_miles: s.distance_miles, cost_usd: s.cost_usd,
-          program_id: s.program_id || null, fare_class: s.fare_class || null,
+          program_id: s.program_id || null, fare_class: null,
         })),
     };
     try {
@@ -169,7 +169,7 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
     upd({ entries: draft.entries.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const delEntry = (i: number) => upd({ entries: draft.entries.filter((_, j) => j !== i) });
 
-  const addSeg = () => upd({ segments: [...draft.segments, { origin_airport: '', destination_airport: '', distance_miles: null, cost_usd: null, program_id: '', fare_class: '' }] });
+  const addSeg = () => upd({ segments: [...draft.segments, { origin_airport: '', destination_airport: '', distance_miles: null, cost_usd: null, program_id: '' }] });
   const setSeg = (i: number, patch: Partial<SegDraft>) =>
     upd({ segments: draft.segments.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
   const delSeg = (i: number) => upd({ segments: draft.segments.filter((_, j) => j !== i) });
@@ -297,7 +297,6 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
                 <div><label className="label">To</label><input className="input w-24 uppercase" value={s.destination_airport} onChange={e => setSeg(i, { destination_airport: e.target.value.toUpperCase() })} onBlur={() => autoDistance(i)} /></div>
                 <div><label className="label">Miles</label><input type="number" className="input w-28" value={s.distance_miles ?? ''} onChange={e => setSeg(i, { distance_miles: e.target.value === '' ? null : Number(e.target.value) })} /></div>
                 <div><label className="label">Cost $</label><input type="number" className="input w-24" value={s.cost_usd ?? ''} onChange={e => setSeg(i, { cost_usd: e.target.value === '' ? null : Number(e.target.value) })} /></div>
-                <div><label className="label">Fare</label><input className="input w-20" value={s.fare_class} onChange={e => setSeg(i, { fare_class: e.target.value })} /></div>
                 <button className="btn-ghost text-red-600" onClick={() => delSeg(i)}>×</button>
               </div>
             ))}

@@ -899,3 +899,144 @@ describe('v1.5 AA AAdvantage: drop spend, derive LPs from segment cost', () => {
     expect(dl.ytdTotals.mqd).toBe(800);
   });
 });
+
+// v1.5.1: fixes for the Delta Million Miler lifetime-mileage accrual bug. The Trips.tsx segment
+// editor has no per-segment program picker, so newly-created segments always have an empty
+// program_id — accruedLifetimeMiles' original query (`s.program_id = ?`) silently matched
+// nothing for these segments even though the trip carries a Delta program credit and the MQD
+// auto-calc (which never filtered on segment program_id in the same way) worked correctly.
+describe('v1.5.1: accruedLifetimeMiles credits Delta miles via trip program credit, not segment.program_id', () => {
+  it('credits segment miles when segments have empty program_id but the trip has a Delta program credit entry (regression, Ann\'s "DC" trip)', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'DC', start_date: '2026-07-23', end_date: '2026-07-26', status: 'completed',
+      is_historical_estimate_date: true,
+      entries: [{ program_id: 'dl', is_estimate: false, metric_values: {} }],
+      segments: [
+        { origin_airport: 'ATL', destination_airport: 'DCA', distance_miles: 547, cost_usd: 185 },
+        { origin_airport: 'DCA', destination_airport: 'ATL', distance_miles: 547, cost_usd: 217 },
+      ],
+    });
+    expect(accruedLifetimeMiles(db, 'dl', '2026-07-01')).toBe(1094);
+  });
+
+  it('still credits segment miles when segments have program_id="dl" explicitly set (backward compat)', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'DC explicit tagging', start_date: '2026-07-23', status: 'completed',
+      entries: [{ program_id: 'dl', is_estimate: false, metric_values: {} }],
+      segments: [
+        { origin_airport: 'ATL', destination_airport: 'DCA', distance_miles: 547, cost_usd: 185, program_id: 'dl' },
+        { origin_airport: 'DCA', destination_airport: 'ATL', distance_miles: 547, cost_usd: 217, program_id: 'dl' },
+      ],
+    });
+    expect(accruedLifetimeMiles(db, 'dl', '2026-07-01')).toBe(1094);
+  });
+
+  it('does not double-count segments when a trip has more than one Delta-related program entry (e.g. an estimate row alongside an actual row)', () => {
+    const db = seededDb();
+    const trip = tripCreate(db, {
+      label: 'DC with estimate + actual entries', start_date: '2026-07-23', status: 'completed',
+      entries: [{ program_id: 'dl', is_estimate: false, metric_values: {} }],
+      segments: [
+        { origin_airport: 'ATL', destination_airport: 'DCA', distance_miles: 547, cost_usd: 185 },
+        { origin_airport: 'DCA', destination_airport: 'ATL', distance_miles: 547, cost_usd: 217 },
+      ],
+    });
+    // Add a second trip_program_entries row for the SAME program but different is_estimate value —
+    // permitted by the UNIQUE(trip_id, program_id, is_estimate) constraint. The EXISTS-based query
+    // must still count each segment only once, not once per matching entry row.
+    db.prepare(`INSERT INTO trip_program_entries (trip_id, program_id, is_estimate, metric_values)
+      VALUES (?, ?, ?, ?)`).run(trip.id, 'dl', 1, JSON.stringify({}));
+    expect(accruedLifetimeMiles(db, 'dl', '2026-07-01')).toBe(1094);
+  });
+
+  it('does not credit untagged segments toward a DIFFERENT program than the trip\'s credit', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'AA trip, untagged segments', start_date: '2026-07-23', status: 'completed',
+      entries: [{ program_id: 'aa', is_estimate: false, metric_values: {} }],
+      segments: [
+        { origin_airport: 'DFW', destination_airport: 'ORD', distance_miles: 800, cost_usd: 300 },
+      ],
+    });
+    expect(accruedLifetimeMiles(db, 'dl', '2026-07-01')).toBe(0);
+  });
+});
+
+describe('v1.5.1: computeProjections Delta MQD / AA points auto-calc works with untagged segments', () => {
+  it('Delta MQD auto-calc sums segment cost when segments have empty program_id (Ann\'s "DC" trip: $185 + $217 = $402)', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'DC', start_date: '2026-07-23', end_date: '2026-07-26', status: 'completed',
+      is_historical_estimate_date: true,
+      entries: [{ program_id: 'dl', is_estimate: false, metric_values: {} }],
+      segments: [
+        { origin_airport: 'ATL', destination_airport: 'DCA', distance_miles: 547, cost_usd: 185 },
+        { origin_airport: 'DCA', destination_airport: 'ATL', distance_miles: 547, cost_usd: 217 },
+      ],
+    });
+    const dl = computeProjections(db, new Date('2026-07-27T00:00:00Z')).find(p => p.program.id === 'dl')!;
+    expect(dl.ytdTotals.mqd).toBe(402);
+  });
+
+  it('Delta MQD auto-calc still sums segment cost when segments have program_id="dl" explicitly (backward compat)', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'DC explicit tagging', start_date: '2026-07-23', status: 'completed',
+      entries: [{ program_id: 'dl', is_estimate: false, metric_values: {} }],
+      segments: [
+        { origin_airport: 'ATL', destination_airport: 'DCA', distance_miles: 547, cost_usd: 185, program_id: 'dl' },
+        { origin_airport: 'DCA', destination_airport: 'ATL', distance_miles: 547, cost_usd: 217, program_id: 'dl' },
+      ],
+    });
+    const dl = computeProjections(db, new Date('2026-07-27T00:00:00Z')).find(p => p.program.id === 'dl')!;
+    expect(dl.ytdTotals.mqd).toBe(402);
+  });
+
+  it('AA points auto-calc sums segment cost when segments have empty program_id', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'AA untagged segments', start_date: '2026-05-01', status: 'completed',
+      entries: [{ program_id: 'aa', is_estimate: false, metric_values: {} }],
+      segments: [{ origin_airport: 'DFW', destination_airport: 'ORD', distance_miles: 800, cost_usd: 300 }],
+    });
+    const aa = computeProjections(db, new Date('2026-06-01T00:00:00Z')).find(p => p.program.id === 'aa')!;
+    expect(aa.ytdTotals.points).toBe(1500); // 300 * 5 (base rate, no held status)
+  });
+
+  it('AA points auto-calc still sums segment cost when segments have program_id="aa" explicitly (backward compat)', () => {
+    const db = seededDb();
+    tripCreate(db, {
+      label: 'AA tagged segments', start_date: '2026-05-01', status: 'completed',
+      entries: [{ program_id: 'aa', is_estimate: false, metric_values: {} }],
+      segments: [{ origin_airport: 'DFW', destination_airport: 'ORD', distance_miles: 800, cost_usd: 300, program_id: 'aa' }],
+    });
+    const aa = computeProjections(db, new Date('2026-06-01T00:00:00Z')).find(p => p.program.id === 'aa')!;
+    expect(aa.ytdTotals.points).toBe(1500); // 300 * 5
+  });
+
+  it('mixed-program trip: untagged segments only credit the program that has no explicitly-tagged segments of its own', () => {
+    const db = seededDb();
+    // A trip with BOTH a Delta and an AA credit, where the Delta segment IS explicitly tagged
+    // but a separate untagged segment exists too. The untagged segment should NOT be double
+    // counted into both programs: since a 'dl'-tagged segment exists, Delta uses only that;
+    // the untagged segment falls back to AA's derivation (no 'aa'-tagged segment exists).
+    tripCreate(db, {
+      label: 'Mixed itinerary', start_date: '2026-05-01', status: 'completed',
+      entries: [
+        { program_id: 'dl', is_estimate: false, metric_values: {} },
+        { program_id: 'aa', is_estimate: false, metric_values: {} },
+      ],
+      segments: [
+        { origin_airport: 'ATL', destination_airport: 'JFK', distance_miles: 760, cost_usd: 400, program_id: 'dl' },
+        { origin_airport: 'JFK', destination_airport: 'ORD', distance_miles: 740, cost_usd: 300 },
+      ],
+    });
+    const projections = computeProjections(db, new Date('2026-06-01T00:00:00Z'));
+    const dl = projections.find(p => p.program.id === 'dl')!;
+    const aa = projections.find(p => p.program.id === 'aa')!;
+    expect(dl.ytdTotals.mqd).toBe(400); // only the explicitly-tagged 'dl' segment
+    expect(aa.ytdTotals.points).toBe(1500); // untagged segment (300) * 5, falls back to AA
+  });
+});

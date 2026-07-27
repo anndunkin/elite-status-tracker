@@ -3,6 +3,60 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] — 2026-07-27
+
+### Fixed
+- **Delta Million Miler lifetime-mileage accrual bug.** The Lifetime Mileage /
+  Million Miler card on the Delta program-detail page was showing 0 miles
+  flown on completed segments since baseline, even for trips with a Delta
+  program credit and completed flight segments (e.g. Ann's "DC" trip,
+  2026-07-23, two segments ATL-DCA and DCA-ATL at 547 mi each = 1,094 mi
+  total). Root cause: `accruedLifetimeMiles` in `electron/database.ts`
+  filtered on the SEGMENT's own `program_id`, but the Trips.tsx segment editor
+  has no per-segment program picker — new segments are always saved with an
+  empty `program_id`, so they never matched. The query now credits a segment
+  toward a program's lifetime mileage if EITHER the segment is explicitly
+  tagged with that program, OR the segment is untagged and its trip carries a
+  program-credit entry (`trip_program_entries`) for that program — matching
+  the same fallback pattern already used successfully by the Delta MQD/AA LP
+  segment-cost auto-calc. An `EXISTS` subquery (rather than a `JOIN`) ensures
+  segments are never double-counted even if a trip somehow carries more than
+  one program-credit row for the same program (e.g. an estimate row alongside
+  an actual row).
+- **Delta MQD and AA Loyalty Points segment-cost auto-calc** in
+  `computeProjections` had the identical segment-`program_id` filtering bug
+  (it happened to still "work" for MQD/LP display because most test/seed data
+  tagged segments explicitly, but silently under-counted real untagged
+  segments in some code paths). Both now use a shared `deriveSegmentCost`
+  helper: sum `cost_usd` across segments explicitly tagged for the program if
+  any exist, otherwise sum across ALL of the trip's segments. This avoids
+  double-crediting cost on a mixed-itinerary trip (some segments explicitly
+  tagged for a different program) while correctly handling the common
+  untagged-segment case.
+
+### Changed
+- **Contributing Trips table (Delta program-detail page) now shows MM miles
+  earned alongside MQDs.** Each Delta row's metrics column now reads e.g.
+  `402 mqd · +1,094 mm` — the `+N mm` suffix (Million Miler miles earned from
+  that trip's Delta segments, using the same tagged/untagged fallback as the
+  MQD auto-calc) is appended only when greater than zero. Non-Delta programs
+  are unaffected.
+- **Removed the redundant "Fare" input from the trip segment editor**
+  (Trips.tsx). The Cost $ field already captures what's needed for MQD/LP
+  auto-calc, and the free-text Fare field was unused elsewhere in the app. The
+  underlying `fare_class` column is kept on `trip_segments` for backward
+  compatibility with existing data — it is simply no longer rendered, tracked
+  in form state, or written to on save (writes `null` going forward).
+
+### Tests
+- 8 new tests covering the Million Miler accrual fix (untagged vs. explicitly
+  tagged segments, no double-counting across multiple program-credit rows,
+  cross-program isolation), the Delta MQD / AA LP auto-calc fix (untagged vs.
+  tagged segments, mixed-itinerary isolation), and the Contributing Trips
+  `+N mm` display (present when miles > 0, absent when 0, explicit-mqd
+  override, non-Delta unaffected).
+- Full suite: **178/178 passing** (up from 162/162 in v1.5.0).
+
 ## [1.5.0] — 2026-07-27
 
 ### Changed

@@ -25,6 +25,44 @@ function totalsText(totals: Record<string, number>, programId?: string): string 
   return keys.map(k => `${totals[k].toLocaleString()} ${displayMetricKey(programId, k)}`).join(', ');
 }
 
+/**
+ * Sum a numeric segment field for a trip, preferring segments explicitly tagged with the given
+ * program_id, but falling back to ALL of the trip's segments when none are explicitly tagged
+ * (the common case — the segment editor has no per-segment program picker). Mirrors
+ * `deriveSegmentCost` in electron/database.ts, generalized to any numeric field.
+ */
+export function deriveSegmentSum(
+  segments: TripWithDetails['segments'], programId: string, field: 'cost_usd' | 'distance_miles',
+): number {
+  const taggedSegs = segments.filter(s => s.program_id === programId && typeof s[field] === 'number');
+  const untaggedSegs = segments.filter(s => !s.program_id && typeof s[field] === 'number');
+  const source = taggedSegs.length > 0 ? taggedSegs : untaggedSegs;
+  return source.reduce((sum, s) => sum + (s[field] as number), 0);
+}
+
+/**
+ * Contributing-trips metrics cell text for one program-credit entry on one trip. Shows the
+ * entry's explicit metric_values as before, but for Delta additionally derives (a) the mqd
+ * value from segment cost when not explicitly entered (matching computeProjections'
+ * auto-calc), and (b) the Million Miler miles earned from this trip's Delta segments, appended
+ * after the mqd figure as "+N mm" — only when that mileage is greater than zero.
+ */
+export function contributingMetricsText(
+  trip: TripWithDetails, entryProgramId: string, metricValues: Record<string, number>,
+): string {
+  let mv = metricValues;
+  if (entryProgramId === 'dl' && mv.mqd === undefined) {
+    const derivedMqd = deriveSegmentSum(trip.segments, 'dl', 'cost_usd');
+    if (derivedMqd > 0) mv = { ...mv, mqd: derivedMqd };
+  }
+  const base = totalsText(mv, entryProgramId);
+  if (entryProgramId !== 'dl') return base;
+  const mmMiles = deriveSegmentSum(trip.segments, 'dl', 'distance_miles');
+  if (mmMiles <= 0) return base;
+  const mmText = `+${mmMiles.toLocaleString()} mm`;
+  return base === '—' ? mmText : `${base} · ${mmText}`;
+}
+
 export default function ProgramDetail() {
   const { id = '' } = useParams();
   const navigate = useNavigate();
@@ -330,7 +368,7 @@ export default function ProgramDetail() {
                     <td className="py-1.5 font-medium">{trip.label}</td>
                     <td className="py-1.5">{trip.status}</td>
                     <td className="py-1.5">{e.is_estimate === 1 ? 'estimate' : 'actual'}</td>
-                    <td className="py-1.5 text-slate-600 dark:text-slate-300">{totalsText(JSON.parse(e.metric_values), id)}</td>
+                    <td className="py-1.5 text-slate-600 dark:text-slate-300">{contributingMetricsText(trip, id, JSON.parse(e.metric_values))}</td>
                     <td className="py-1.5 text-right">
                       <button className="btn-ghost text-xs" onClick={() => navigate(`/trips?edit=${trip.id}`)}>Edit</button>
                     </td>
