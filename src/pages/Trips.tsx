@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type {
   Program, TripWithDetails, TripCreate, TripStatus, TripEntryInput, SegmentInput,
 } from '../../electron/types';
+import { displayMetricKey, statusMultiplierForAAPreview } from '../lib/metricLabels';
 
 const STATUSES: TripStatus[] = ['planned', 'booked', 'completed'];
 
@@ -225,6 +226,17 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
             {draft.entries.map((e, i) => {
               const prog = activePrograms.find(p => p.id === e.program_id);
               const keys = prog ? metricKeys(prog) : [];
+              const isDelta = prog?.id === 'dl';
+              const isAA = prog?.id === 'aa';
+              const visibleKeys = isDelta ? keys.filter(k => k !== 'mqd') : keys;
+              // AA Loyalty Points: auto-fill from segment cost (base 5x multiplier; the exact
+              // multiplier for the tier held this status year is resolved server-side in
+              // computeProjections — this is just a convenience pre-fill, not the final value).
+              const aaAutoFillPoints = isAA && e.metric_values.points === undefined
+                ? Math.round(draft.segments
+                    .filter(s => s.program_id === 'aa' && typeof s.cost_usd === 'number')
+                    .reduce((sum, s) => sum + (s.cost_usd as number), 0) * statusMultiplierForAAPreview(null))
+                : null;
               return (
                 <div key={i} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
                   <div className="flex flex-wrap items-center gap-2">
@@ -238,14 +250,29 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
                     <button className="btn-ghost text-red-600 ml-auto" onClick={() => delEntry(i)}>Remove</button>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {keys.map(k => (
+                    {visibleKeys.map(k => (
                       <div key={k}>
-                        <label className="label">{k}</label>
-                        <input type="number" className="input w-32" value={e.metric_values[k] ?? ''}
+                        <label className="label">{displayMetricKey(prog?.id, k)}</label>
+                        <input type="number" className="input w-32"
+                          value={isAA && k === 'points' && e.metric_values.points === undefined && aaAutoFillPoints
+                            ? aaAutoFillPoints : (e.metric_values[k] ?? '')}
+                          placeholder={isAA && k === 'points' && aaAutoFillPoints ? String(aaAutoFillPoints) : undefined}
                           onChange={ev => setEntry(i, { metric_values: { ...e.metric_values, [k]: Number(ev.target.value) } })} />
                       </div>
                     ))}
                   </div>
+                  {isDelta && (
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Delta MQDs auto-calculated from segment cost ($1 = 1 MQD). Add flight segments with a Cost value below.
+                    </p>
+                  )}
+                  {isAA && (
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      AA Loyalty Points auto-calculated from segment cost × your current AA earning multiplier.
+                      Add flight segments with a Cost value below to estimate. Enter posted LPs manually after
+                      the trip completes if you want exact values.
+                    </p>
+                  )}
                   <div className="mt-2">
                     <label className="label">Card / bonus notes</label>
                     <input className="input" value={e.card_bonus_notes} onChange={ev => setEntry(i, { card_bonus_notes: ev.target.value })} />

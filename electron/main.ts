@@ -5,12 +5,13 @@ import {
   getDatabase, openDatabaseAt,
   programsGetAll, programGetById, programGetTiers, programCreateRuleVersion, lastActivityGetAll,
   tripGetAll, tripGetById, tripCreate, tripUpdate, tripDelete,
-  computeProjections, adjustmentsGetAll,
+  computeProjections, adjustmentsGetAll, adjustmentDelete, adjustmentsDeleteForProgramYear,
   refreshStatus, refreshLogCheck,
   buildFilePayload, importFilePayload,
   lifetimeStatusGetAll, lifetimeStatusSet, lifetimeStatusClear, lifetimeMileageGetAll,
   cardEarningsGetAll, cardEarningCreate, cardEarningUpdate, cardEarningDelete,
   statusOverridesGetAll, statusOverrideSet, statusOverrideClear,
+  applyDataMigrations,
 } from './database';
 import type {
   TripCreate, TripUpdate, TierRequirement, AppFilePayload, FileResult,
@@ -122,6 +123,7 @@ app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
   currentDbPath = defaultDbPath();
   openDatabaseAt(currentDbPath);
+  logError(`data migrations: ${JSON.stringify(applyDataMigrations(getDatabase()))}`);
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -155,6 +157,9 @@ ipcMain.handle('trips:delete', (_e, id: number) => tripDelete(getDatabase(), id)
 ipcMain.handle('projection:all', (_e, viewYear?: number) =>
   computeProjections(getDatabase(), viewYearToDate(viewYear)));
 ipcMain.handle('adjustments:all', () => adjustmentsGetAll(getDatabase()));
+ipcMain.handle('adjustments:delete', (_e, id: number) => adjustmentDelete(getDatabase(), id));
+ipcMain.handle('adjustments:deleteForProgramYear', (_e, programId: string, year: number) =>
+  adjustmentsDeleteForProgramYear(getDatabase(), programId, year));
 
 // ─── Lifetime status / mileage ───────────────────────────────────────────────────
 

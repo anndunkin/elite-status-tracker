@@ -22,6 +22,8 @@ const api: WindowApi = {
   },
   adjustments: {
     all: () => ipcRenderer.invoke('adjustments:all'),
+    delete: (id) => ipcRenderer.invoke('adjustments:delete', id),
+    deleteForProgramYear: (programId, year) => ipcRenderer.invoke('adjustments:deleteForProgramYear', programId, year),
   },
   lifetime: {
     status: () => ipcRenderer.invoke('lifetime:status'),

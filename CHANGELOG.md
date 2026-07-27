@@ -3,6 +3,118 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-07-27
+
+### Changed
+- **Delta SkyMiles MQDs are now auto-calculated from flight segment cost** ($1
+  spent = 1 MQD), instead of being a manually-typed metric. Add flight segments
+  with a **Cost** value on a trip and the Delta program-credit entry derives its
+  MQD total automatically at projection time; entering an explicit MQD value on
+  the entry still overrides the auto-calc for cases where the posted MQD differs
+  from raw spend (e.g. promotions). The Trip editor's Delta entry now hides the
+  old manual MQD field and shows a helper line explaining the auto-calc.
+- **Delta MQMs (Medallion Qualification Miles) have been dropped entirely.**
+  Delta retired MQMs as a qualification metric, so `mqm` is no longer one of
+  Delta's tracked metrics — only `mqd` remains. A one-time startup migration
+  rewrites any database that still lists `mqm` in Delta's metric keys, strips any
+  stored `mqm` values from existing Delta trip entries and adjustments, and
+  (once, gated so it never repeats) clears out any 2026 Delta adjustments that
+  were entered under the old MQM-inclusive rules.
+- **American AAdvantage now tracks Loyalty Points (LPs) only** — the vestigial
+  `spend` metric has been removed from AA's tracked metrics, matching how AA
+  actually measures status today. The UI now labels AA's underlying `points`
+  metric as **"LPs"** everywhere it is displayed (dashboard cards, tier
+  requirements, program detail, trip entries, adjustments); the metric is still
+  stored under the historical `points` key internally so existing data is
+  unaffected.
+- **AA Loyalty Points are now auto-calculated from flight segment cost**, using
+  the earning multiplier for the AA elite tier you hold entering the current
+  status year: 5x with no status, 7x Gold, 8x Platinum, 9x Platinum Pro, 11x
+  Executive Platinum (held tier is the highest of your resolved lifetime floor,
+  a current-year manual override, or the tier you actually qualified for in the
+  prior AA status year). Add flight segments with a **Cost** value and the trip
+  editor pre-fills an estimated LP value; enter the posted LP amount manually
+  after the trip completes for an exact figure — an explicit value always wins
+  over the auto-calc.
+- A one-time startup migration rewrites any database that still lists `spend` in
+  AA's metric keys down to `["points"]`, and strips any stored `spend` values
+  from existing AA trip entries and adjustments (Hilton's and Marriott's own
+  `spend` metrics are untouched — the migration is scoped to `program_id='aa'`
+  only).
+
+### Added
+- **Delete adjustments.** The Program Detail page's "Year adjustments" table now
+  has a **Delete** button (with a confirmation prompt) on every row, backed by a
+  new `adjustments:delete` IPC channel and `adjustmentDelete()` data-layer
+  function. A companion `adjustmentsDeleteForProgramYear()` bulk-delete function
+  (and `adjustments:deleteForProgramYear` IPC channel) supports clearing all of a
+  program's adjustments for a given program-year in one call — used internally by
+  the one-time Delta 2026 cleanup migration described above.
+- **Startup data-migration pipeline.** `applyDataMigrations()` now runs on every
+  app launch (after the existing fresh-install seed step) and is fully additive
+  and idempotent: it tops up any missing Delta Million Miler lifetime-mileage
+  baseline row without ever overwriting one you already have, fixes Delta's and
+  AA's metric-key lists if they still contain the retired `mqm`/`spend` keys,
+  strips any leftover `mqm`/`spend` values out of stored entries and adjustments,
+  and runs the one-time 2026 Delta adjustment cleanup — each step logs a summary
+  count so you can see exactly what (if anything) changed on next launch.
+
+### Documentation
+- Updated `README.md`, `docs/USER_GUIDE.md`, and `docs/TECHNICAL.md` to describe
+  Delta's MQD auto-calc and MQM removal, AA's LP auto-calc and `spend` removal,
+  the adjustment-delete UI, and the new startup data-migration pipeline. Reiterated
+  the multi-size app icon and Windows icon-cache reset steps (uninstall the
+  previous version, delete `%LOCALAPPDATA%\IconCache.db` or run
+  `ie4uinit.exe -show`, reinstall, reboot) since the icon fix from v1.4.0 only
+  takes full effect after Windows' icon cache is cleared.
+
+### Fixed
+- **AA Loyalty Points: `null` metric values no longer silently drop LPs.** A
+  trip entry whose `points` value was stored as `null` (rather than genuinely
+  absent/`undefined` — this can happen after a portable-file JSON export/import
+  round-trip) was being treated as "explicitly entered" and skipped the
+  auto-calc entirely, silently zeroing out that trip's LP contribution. `null`
+  is now treated exactly like `undefined`: the auto-calc still fires from
+  segment cost. An explicit `0` is still honored as a real value and does not
+  trigger the auto-calc.
+- **Investigated a user report of AA LPs totaling ~34,000 versus an expected
+  ~27,000 (~26% high).** A full audit of the trip / adjustment / card-earnings
+  paths in `computeProjections` did not reproduce a double-count: each source is
+  bucketed exactly once, the AA-specific rebuild fully replaces (rather than
+  adds to) the raw pass for the current program-year, and an explicit `points`
+  value always wins over the auto-calc, including alongside segment cost that
+  would otherwise derive a larger number. No code path was found that inflates
+  the total for well-formed data. To help pinpoint the discrepancy, every
+  program's Program Detail page now shows a **per-source breakdown** (see
+  "Added" below) so a total can be reconciled line-by-line against its trips,
+  adjustments, and card earnings.
+
+### Added
+- **Metric source breakdown.** The Program Detail page now shows, for the
+  current program-year, how much of each tracked metric came from **trips**,
+  **year adjustments**, and **credit-card earnings** — with a total column that
+  reconciles exactly to the displayed Year-to-date figure. For AA and Delta the
+  Trips column reflects the auto-calculated LP/MQD value, not just
+  manually-entered ones, so you can see precisely where an unexpectedly high or
+  low total is coming from (e.g. a trip's auto-calc plus a separate card-earning
+  entry logged for the same activity).
+
+### Testing
+- Extended `tests/functionality.test.ts` with coverage for all four v1.5
+  migration helpers (`ensureLifetimeMileageRows`, `ensureDeltaMetricKeys`,
+  `stripDeltaMqmValues`, `deleteDelta2026AdjustmentsOnce`, plus their AA
+  counterparts `ensureAaMetricKeys`/`stripAaSpendValues`), Delta MQD and AA LP
+  auto-derivation in `computeProjections` (including explicit-value overrides,
+  estimate-vs-actual bucketing, and all five AA earning-rate tiers),
+  `adjustmentDelete`/`adjustmentsDeleteForProgramYear` CRUD behavior, and
+  the `null`-vs-`undefined` AA points guard, explicit-zero non-derivation, an
+  explicit-value-wins-over-larger-derived-value case, and `metricSourceBreakdown`
+  reconciliation for both AA and Delta. `tests/security.test.ts` gained
+  ICO-container validation for the multi-size app icon and SQL-injection
+  coverage for the new adjustment-delete queries. `tests/validation.test.ts` and
+  `tests/boundary.test.ts` gained negative-id and not-found deletion cases. Full
+  suite grew from 133 to 162, all passing.
+
 ## [1.4.0] — 2026-07-22
 
 ### Changed

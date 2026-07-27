@@ -5,6 +5,7 @@ import { seededDb } from './helpers';
 import {
   tripCreate, tripGetAll, programGetById, cardEarningCreate, cardEarningsGetAll,
   statusOverrideSet, statusOverridesGetAll,
+  adjustmentDelete, adjustmentsDeleteForProgramYear, adjustmentsGetAll,
 } from '../electron/database';
 import { resolveIconPath, iconPathWithinAssets, ICON_FILE } from '../electron/iconPath';
 
@@ -157,5 +158,51 @@ describe('dashboard reorder introduces no IPC/data-access surface (regression)',
     for (const ch of ['projection:all', 'trips:getAll', 'programs:getAll']) {
       expect(preload).toContain(ch);
     }
+  });
+});
+
+describe('multi-size icon.ico (v1.5)', () => {
+  // Parse the raw ICO container: 6-byte ICONDIR header + N x 16-byte ICONDIRENTRY records.
+  // Byte 0 of each entry is width in pixels (0 means 256).
+  function readIcoSizes(): number[] {
+    const buf = fs.readFileSync(path.resolve(__dirname, '..', 'assets', 'icon.ico'));
+    expect(buf.readUInt16LE(0)).toBe(0); // reserved
+    expect(buf.readUInt16LE(2)).toBe(1); // type = icon
+    const count = buf.readUInt16LE(4);
+    const sizes: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const offset = 6 + i * 16;
+      const w = buf.readUInt8(offset);
+      sizes.push(w === 0 ? 256 : w);
+    }
+    return sizes;
+  }
+
+  it('is a valid ICONDIR container', () => {
+    expect(() => readIcoSizes()).not.toThrow();
+  });
+
+  it('contains at least the 16, 32, 48, and 256 sized entries', () => {
+    const sizes = readIcoSizes();
+    for (const required of [16, 32, 48, 256]) {
+      expect(sizes, `expected size ${required} present`).toContain(required);
+    }
+  });
+});
+
+describe('adjustment delete IPC uses parameterized queries (v1.5)', () => {
+  it('a malicious numeric-looking id string does not drop tables and simply matches nothing', () => {
+    const db = seededDb();
+    const evil = "1); DROP TABLE program_year_adjustments;--" as unknown as number;
+    expect(() => adjustmentDelete(db, evil)).not.toThrow();
+    expect(() => db.prepare('SELECT COUNT(*) FROM program_year_adjustments').get()).not.toThrow();
+  });
+
+  it('a malicious programId string in deleteForProgramYear is treated as literal data', () => {
+    const db = seededDb();
+    const evil = "dl'); DROP TABLE program_year_adjustments;--";
+    expect(() => adjustmentsDeleteForProgramYear(db, evil, 2026)).not.toThrow();
+    expect(() => db.prepare('SELECT COUNT(*) FROM program_year_adjustments').get()).not.toThrow();
+    expect(adjustmentsGetAll(db)).toBeInstanceOf(Array);
   });
 });

@@ -3,6 +3,7 @@ import { seededDb, emptyDb } from './helpers';
 import {
   computeProjections, tripCreate, lifetimeMileageGetAll, accruedLifetimeMiles,
   statusOverrideSet, statusOverrideClear,
+  adjustmentDelete, adjustmentsDeleteForProgramYear,
 } from '../electron/database';
 import {
   qualifiesForTier, programYearOf, isLeapYear, currentProgramYear, sumMetrics,
@@ -165,5 +166,17 @@ describe('large totals', () => {
     const big = 5_000_000;
     expect(qualifiesForTier({ points: big }, [{ metric: 'points', threshold: 200000 }])).toBe(true);
     expect(currentProgramYear(new Date('2026-07-22'), 'calendar')).toBe(2026);
+  });
+});
+
+describe('adjustment deletion boundary cases (v1.5)', () => {
+  it('deleting a non-existent adjustment id returns false', () => {
+    const db = seededDb();
+    expect(adjustmentDelete(db, 999999)).toBe(false);
+  });
+  it('deleteForProgramYear with no matching rows returns 0', () => {
+    const db = seededDb();
+    expect(adjustmentsDeleteForProgramYear(db, 'dl', 1999)).toBe(0);
+    expect(adjustmentsDeleteForProgramYear(db, 'nope', 2026)).toBe(0);
   });
 });

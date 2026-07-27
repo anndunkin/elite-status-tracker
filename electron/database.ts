@@ -35,6 +35,7 @@ export function openDatabaseAt(dbPath: string): Database.Database {
   db.pragma('foreign_keys = ON');
   initSchema(db);
   seedIfFresh(db);
+  applyDataMigrations(db);
   return db;
 }
 
@@ -239,6 +240,145 @@ export function seedIfFresh(database: Database.Database): void {
   seedTx();
 }
 
+// ─── Startup data migrations (v1.5) ──────────────────────────────────────────
+//
+// Run unconditionally at the end of openDatabaseAt, on every launch, after
+// seedIfFresh. Each helper is idempotent and safe to call repeatedly.
+
+export interface DataMigrationsSummary {
+  mileageAdded: number;
+  metricKeysFixed: boolean;
+  mqmStripped: number;
+  delta2026AdjustmentsCleared: number | null;
+  aaMetricKeysFixed: boolean;
+  aaSpendStripped: number;
+}
+
+/** INSERT OR IGNORE each SEED_LIFETIME_MILEAGE row; never rewrites an existing baseline. */
+export function ensureLifetimeMileageRows(database: Database.Database): number {
+  let added = 0;
+  const insert = database.prepare(`
+    INSERT OR IGNORE INTO program_lifetime_mileage (program_id, baseline_miles, baseline_date, milestones)
+    VALUES (?, ?, ?, ?)`);
+  for (const lm of SEED_LIFETIME_MILEAGE) {
+    const res = insert.run(lm.program_id, lm.baseline_miles, lm.baseline_date, JSON.stringify(lm.milestones));
+    if (res.changes > 0) added += 1;
+  }
+  return added;
+}
+
+/** If programs.metric_keys for 'dl' still contains 'mqm', rewrite to ["mqd"]. */
+export function ensureDeltaMetricKeys(database: Database.Database): boolean {
+  const row = database.prepare('SELECT metric_keys FROM programs WHERE id = ?').get('dl') as { metric_keys: string } | undefined;
+  if (!row) return false;
+  let keys: string[] = [];
+  try { keys = JSON.parse(row.metric_keys) as string[]; } catch { return false; }
+  if (!keys.includes('mqm')) return false;
+  const fixed = keys.filter(k => k !== 'mqm');
+  database.prepare('UPDATE programs SET metric_keys = ? WHERE id = ?').run(JSON.stringify(fixed), 'dl');
+  return true;
+}
+
+/** Strip any 'mqm' key from Delta trip_program_entries / program_year_adjustments metric_values JSON. Returns rows changed. */
+export function stripDeltaMqmValues(database: Database.Database): number {
+  let updated = 0;
+
+  const entries = database.prepare(
+    `SELECT id, metric_values FROM trip_program_entries WHERE program_id = ?`
+  ).all('dl') as Array<{ id: number; metric_values: string }>;
+  const updEntry = database.prepare('UPDATE trip_program_entries SET metric_values = ? WHERE id = ?');
+  for (const e of entries) {
+    let mv: Record<string, number>;
+    try { mv = JSON.parse(e.metric_values) as Record<string, number>; } catch { continue; }
+    if (!('mqm' in mv)) continue;
+    const { mqm: _mqm, ...rest } = mv;
+    updEntry.run(JSON.stringify(rest), e.id);
+    updated += 1;
+  }
+
+  const adjustments = database.prepare(
+    `SELECT id, metric_values FROM program_year_adjustments WHERE program_id = ?`
+  ).all('dl') as Array<{ id: number; metric_values: string }>;
+  const updAdj = database.prepare('UPDATE program_year_adjustments SET metric_values = ? WHERE id = ?');
+  for (const a of adjustments) {
+    let mv: Record<string, number>;
+    try { mv = JSON.parse(a.metric_values) as Record<string, number>; } catch { continue; }
+    if (!('mqm' in mv)) continue;
+    const { mqm: _mqm, ...rest } = mv;
+    updAdj.run(JSON.stringify(rest), a.id);
+    updated += 1;
+  }
+
+  return updated;
+}
+
+/** One-time cleanup: delete 2026 Delta adjustments, gated by app_meta.delta_2026_adjustments_cleared. */
+export function deleteDelta2026AdjustmentsOnce(database: Database.Database): number | null {
+  if (metaGet(database, 'delta_2026_adjustments_cleared')) return null;
+  const count = adjustmentsDeleteForProgramYear(database, 'dl', 2026);
+  metaSet(database, 'delta_2026_adjustments_cleared', new Date().toISOString().slice(0, 10));
+  return count;
+}
+
+/** If programs.metric_keys for 'aa' still contains 'spend', rewrite to ["points"]. */
+export function ensureAaMetricKeys(database: Database.Database): boolean {
+  const row = database.prepare('SELECT metric_keys FROM programs WHERE id = ?').get('aa') as { metric_keys: string } | undefined;
+  if (!row) return false;
+  let keys: string[] = [];
+  try { keys = JSON.parse(row.metric_keys) as string[]; } catch { return false; }
+  if (!keys.includes('spend')) return false;
+  const fixed = keys.filter(k => k !== 'spend');
+  database.prepare('UPDATE programs SET metric_keys = ? WHERE id = ?').run(JSON.stringify(fixed), 'aa');
+  return true;
+}
+
+/** Strip any 'spend' key from AA trip_program_entries / program_year_adjustments metric_values JSON. Returns rows changed. */
+export function stripAaSpendValues(database: Database.Database): number {
+  let updated = 0;
+
+  const entries = database.prepare(
+    `SELECT id, metric_values FROM trip_program_entries WHERE program_id = ?`
+  ).all('aa') as Array<{ id: number; metric_values: string }>;
+  const updEntry = database.prepare('UPDATE trip_program_entries SET metric_values = ? WHERE id = ?');
+  for (const e of entries) {
+    let mv: Record<string, number>;
+    try { mv = JSON.parse(e.metric_values) as Record<string, number>; } catch { continue; }
+    if (!('spend' in mv)) continue;
+    const { spend: _spend, ...rest } = mv;
+    updEntry.run(JSON.stringify(rest), e.id);
+    updated += 1;
+  }
+
+  const adjustments = database.prepare(
+    `SELECT id, metric_values FROM program_year_adjustments WHERE program_id = ?`
+  ).all('aa') as Array<{ id: number; metric_values: string }>;
+  const updAdj = database.prepare('UPDATE program_year_adjustments SET metric_values = ? WHERE id = ?');
+  for (const a of adjustments) {
+    let mv: Record<string, number>;
+    try { mv = JSON.parse(a.metric_values) as Record<string, number>; } catch { continue; }
+    if (!('spend' in mv)) continue;
+    const { spend: _spend, ...rest } = mv;
+    updAdj.run(JSON.stringify(rest), a.id);
+    updated += 1;
+  }
+
+  return updated;
+}
+
+/** Runs all v1.5 startup migrations, in order, and returns a summary for logging. */
+export function applyDataMigrations(database: Database.Database): DataMigrationsSummary {
+  const mileageAdded = ensureLifetimeMileageRows(database);
+  const metricKeysFixed = ensureDeltaMetricKeys(database);
+  const mqmStripped = stripDeltaMqmValues(database);
+  const delta2026AdjustmentsCleared = deleteDelta2026AdjustmentsOnce(database);
+  const aaMetricKeysFixed = ensureAaMetricKeys(database);
+  const aaSpendStripped = stripAaSpendValues(database);
+  return {
+    mileageAdded, metricKeysFixed, mqmStripped, delta2026AdjustmentsCleared,
+    aaMetricKeysFixed, aaSpendStripped,
+  };
+}
+
 // ─── Programs ─────────────────────────────────────────────────────────────────
 
 export function programsGetAll(database: Database.Database): Program[] {
@@ -307,6 +447,15 @@ export function lastActivityGetAll(database: Database.Database): ProgramLastActi
 
 export function adjustmentsGetAll(database: Database.Database): ProgramYearAdjustment[] {
   return database.prepare('SELECT * FROM program_year_adjustments ORDER BY program_year DESC, program_id').all() as ProgramYearAdjustment[];
+}
+
+export function adjustmentDelete(database: Database.Database, id: number): boolean {
+  return database.prepare('DELETE FROM program_year_adjustments WHERE id = ?').run(id).changes > 0;
+}
+
+export function adjustmentsDeleteForProgramYear(database: Database.Database, programId: string, year: number): number {
+  return database.prepare('DELETE FROM program_year_adjustments WHERE program_id = ? AND program_year = ?')
+    .run(programId, year).changes;
 }
 
 // ─── Lifetime status ────────────────────────────────────────────────────────────
@@ -542,6 +691,17 @@ export function tripDelete(database: Database.Database, id: number): boolean {
 
 // ─── Status projection ──────────────────────────────────────────────────────────
 
+/** AA per-dollar Loyalty Point earning multiplier, by tier held entering the status year. */
+export function statusMultiplierForAA(tier: string | null | undefined): number {
+  switch (tier) {
+    case 'Gold': return 7;
+    case 'Platinum': return 8;
+    case 'Platinum Pro': return 9;
+    case 'Executive Platinum': return 11;
+    default: return 5; // null / undefined / 'No status'
+  }
+}
+
 export function computeProjections(database: Database.Database, today: Date = new Date()): ProgramProjection[] {
   const programs = programsGetAll(database).filter(p => p.is_active === 1);
   const trips = tripGetAll(database);
@@ -564,23 +724,45 @@ export function computeProjections(database: Database.Database, today: Date = ne
       map.get(year)!.push(mv);
     };
 
+    // Raw pass: bucket metric maps using only explicitly-entered values (no AA points
+    // derivation yet, since that needs the resolved held/lifetime/override tier below,
+    // which itself is computed from these same per-year totals for *prior* years).
+    // Also track each source's contribution to the CURRENT program-year separately
+    // (trips / adjustments / card earnings), for the diagnostic source breakdown below.
+    const currentYearTripActuals: Array<Record<string, number>> = [];
+    const currentYearAdjActuals: Array<Record<string, number>> = [];
+    const currentYearCardActuals: Array<Record<string, number>> = [];
     for (const trip of trips) {
       const year = programYearOf(trip.start_date, program.year_type);
       for (const e of trip.entries) {
         if (e.program_id !== program.id) continue;
-        const mv = JSON.parse(e.metric_values) as Record<string, number>;
-        if (e.is_estimate === 0 && trip.status === 'completed') pushYear(actualByYear, year, mv);
+        let mv = JSON.parse(e.metric_values) as Record<string, number>;
+        // Delta MQDs are derived automatically from segment cost when not explicitly entered.
+        if (program.id === 'dl' && mv.mqd === undefined) {
+          const derivedMqd = trip.segments
+            .filter(s => s.program_id === 'dl' && typeof s.cost_usd === 'number')
+            .reduce((sum, s) => sum + (s.cost_usd as number), 0);
+          if (derivedMqd > 0) mv = { ...mv, mqd: derivedMqd };
+        }
+        if (e.is_estimate === 0 && trip.status === 'completed') {
+          pushYear(actualByYear, year, mv);
+          if (year === programYear) currentYearTripActuals.push(mv);
+        }
         else if (e.is_estimate === 1 && (trip.status === 'planned' || trip.status === 'booked')) pushYear(estimateByYear, year, mv);
       }
     }
     for (const adj of adjustments) {
       if (adj.program_id !== program.id) continue;
-      pushYear(actualByYear, adj.program_year, JSON.parse(adj.metric_values) as Record<string, number>);
+      const mv = JSON.parse(adj.metric_values) as Record<string, number>;
+      pushYear(actualByYear, adj.program_year, mv);
+      if (adj.program_year === programYear) currentYearAdjActuals.push(mv);
     }
     for (const ce of cardEarnings) {
       if (ce.program_id !== program.id) continue;
       const year = programYearOf(ce.entry_date, program.year_type);
-      pushYear(actualByYear, year, { [ce.metric_key]: ce.amount });
+      const mv = { [ce.metric_key]: ce.amount };
+      pushYear(actualByYear, year, mv);
+      if (year === programYear) currentYearCardActuals.push(mv);
     }
 
     const currentActuals = actualByYear.get(programYear) ?? [];
@@ -614,18 +796,98 @@ export function computeProjections(database: Database.Database, today: Date = ne
     consider(lifetimeStatus?.tier_name);
     consider(statusOverride?.tier_name);
 
-    const nextTier = nextTierAbove(ytdTier, tiers);
+    // AA Loyalty Points are derived automatically from segment cost, using the earning
+    // multiplier for the tier held entering the current status year (currentStatusTier,
+    // resolved just above from heldTier / lifetimeStatus / statusOverride). Recompute this
+    // program-year's actual/estimate totals with derived points folded in where the user
+    // hasn't entered an explicit value.
+    let currentActualsFinal = currentActuals;
+    let currentEstimatesFinal = currentEstimates;
+    let aaDerivedTripActuals: Record<string, number>[] | null = null;
+    if (program.id === 'aa') {
+      const multiplier = statusMultiplierForAA(currentStatusTier);
+      const deriveForTrip = (trip: TripWithDetails, mv: Record<string, number>): Record<string, number> => {
+        // An explicit user-entered value (including an explicit 0) always wins. Only
+        // undefined/null (missing or cleared) triggers derivation from segment cost —
+        // JSON round-trips (e.g. portable-file import/export) can turn a genuinely-absent
+        // key into a stored `null`, which must be treated the same as `undefined` here.
+        if (mv.points !== undefined && mv.points !== null) return mv;
+        const costs = trip.segments
+          .filter(s => s.program_id === 'aa' && typeof s.cost_usd === 'number')
+          .reduce((sum, s) => sum + (s.cost_usd as number), 0);
+        if (costs <= 0) return mv;
+        const derivedPoints = Math.round(costs * multiplier);
+        if (derivedPoints <= 0) return mv;
+        return { ...mv, points: derivedPoints };
+      };
+      const aaActuals: Record<string, number>[] = [];
+      const aaEstimates: Record<string, number>[] = [];
+      for (const trip of trips) {
+        const year = programYearOf(trip.start_date, program.year_type);
+        if (year !== programYear) continue;
+        for (const e of trip.entries) {
+          if (e.program_id !== 'aa') continue;
+          const mv = JSON.parse(e.metric_values) as Record<string, number>;
+          const derived = deriveForTrip(trip, mv);
+          if (e.is_estimate === 0 && trip.status === 'completed') aaActuals.push(derived);
+          else if (e.is_estimate === 1 && (trip.status === 'planned' || trip.status === 'booked')) aaEstimates.push(derived);
+        }
+      }
+      // Non-trip actuals (adjustments, card earnings) for the current year are unaffected by derivation;
+      // rebuild them directly from source rather than trying to separate them out of currentActuals.
+      const adjAndCardActuals: Record<string, number>[] = [];
+      for (const adj of adjustments) {
+        if (adj.program_id !== 'aa' || adj.program_year !== programYear) continue;
+        adjAndCardActuals.push(JSON.parse(adj.metric_values) as Record<string, number>);
+      }
+      for (const ce of cardEarnings) {
+        if (ce.program_id !== 'aa') continue;
+        if (programYearOf(ce.entry_date, program.year_type) !== programYear) continue;
+        adjAndCardActuals.push({ [ce.metric_key]: ce.amount });
+      }
+      currentActualsFinal = [...aaActuals, ...adjAndCardActuals];
+      currentEstimatesFinal = aaEstimates;
+      aaDerivedTripActuals = aaActuals;
+    }
+
+    // Diagnostic source breakdown: for each metric key present in the current program-year's
+    // final actuals, how much came from trips vs. adjustments vs. card earnings. For AA this
+    // uses the DERIVED trip values (aaActuals, computed above), not the raw explicitly-entered
+    // ones, so the breakdown always reconciles to ytdTotalsFinal below.
+    const breakdownTripActuals = program.id === 'aa' ? (aaDerivedTripActuals ?? []) : currentYearTripActuals;
+    const tripSourceTotals = sumMetrics(breakdownTripActuals);
+    const adjSourceTotals = sumMetrics(currentYearAdjActuals);
+    const cardSourceTotals = sumMetrics(currentYearCardActuals);
+    const breakdownKeys = new Set<string>([
+      ...Object.keys(tripSourceTotals), ...Object.keys(adjSourceTotals), ...Object.keys(cardSourceTotals),
+    ]);
+    const metricSourceBreakdown: Record<string, { trips: number; adjustments: number; cardEarnings: number }> = {};
+    for (const key of breakdownKeys) {
+      metricSourceBreakdown[key] = {
+        trips: tripSourceTotals[key] ?? 0,
+        adjustments: adjSourceTotals[key] ?? 0,
+        cardEarnings: cardSourceTotals[key] ?? 0,
+      };
+    }
+
+    const ytdTotalsFinal = program.id === 'aa' ? sumMetrics(currentActualsFinal) : ytdTotals;
+    const projectedTotalsFinal = program.id === 'aa'
+      ? sumMetrics([...currentActualsFinal, ...currentEstimatesFinal]) : projectedTotals;
+    const ytdTierFinal = program.id === 'aa' ? highestQualifiedTier(ytdTotalsFinal, tiers) : ytdTier;
+    const projectedTierFinal = program.id === 'aa' ? highestQualifiedTier(projectedTotalsFinal, tiers) : projectedTier;
+
+    const nextTier = nextTierAbove(ytdTierFinal, tiers);
 
     result.push({
       program, program_year: programYear,
-      currentTotals: ytdTotals, projectedTotals,
-      currentTier: ytdTier?.tier_name ?? null,
-      projectedTier: projectedTier?.tier_name ?? null,
+      currentTotals: ytdTotalsFinal, projectedTotals: projectedTotalsFinal,
+      currentTier: ytdTierFinal?.tier_name ?? null,
+      projectedTier: projectedTierFinal?.tier_name ?? null,
       heldTier: heldTier?.tier_name ?? null,
       heldFromYear,
       heldTotals,
-      ytdTotals,
-      ytdTier: ytdTier?.tier_name ?? null,
+      ytdTotals: ytdTotalsFinal,
+      ytdTier: ytdTierFinal?.tier_name ?? null,
       lifetimeTier: lifetimeStatus?.tier_name ?? null,
       overrideTier: statusOverride?.tier_name ?? null,
       currentStatusTier,
@@ -635,6 +897,7 @@ export function computeProjections(database: Database.Database, today: Date = ne
       nextTier: nextTier?.tier_name ?? null,
       nextTierRequirements: nextTier?.requirements ?? null,
       tiers,
+      metricSourceBreakdown,
     });
   }
   return result;

@@ -5,8 +5,9 @@ import type {
   CardEarningEntry, ProgramRuleVersion, ProgramTier, TierRequirement,
 } from '../../electron/types';
 import { programYearOf } from '../../electron/rules';
+import { displayMetricKey } from '../lib/metricLabels';
 
-function reqText(reqs: TierRequirement[]): string {
+function reqText(reqs: TierRequirement[], programId?: string): string {
   const groups = new Map<number, TierRequirement[]>();
   for (const r of reqs) {
     const k = r.group ?? 0;
@@ -14,14 +15,14 @@ function reqText(reqs: TierRequirement[]): string {
     groups.get(k)!.push(r);
   }
   return [...groups.values()]
-    .map(g => g.map(r => `${r.threshold.toLocaleString()} ${r.metric}`).join(' + '))
+    .map(g => g.map(r => `${r.threshold.toLocaleString()} ${displayMetricKey(programId, r.metric)}`).join(' + '))
     .join('  OR  ');
 }
 
-function totalsText(totals: Record<string, number>): string {
+function totalsText(totals: Record<string, number>, programId?: string): string {
   const keys = Object.keys(totals);
   if (!keys.length) return '—';
-  return keys.map(k => `${totals[k].toLocaleString()} ${k}`).join(', ');
+  return keys.map(k => `${totals[k].toLocaleString()} ${displayMetricKey(programId, k)}`).join(', ');
 }
 
 export default function ProgramDetail() {
@@ -127,6 +128,12 @@ export default function ProgramDetail() {
     () => adjustments.filter(a => a.program_id === id && a.program_year === year),
     [adjustments, id, year]);
 
+  async function removeAdjustment(adjId: number) {
+    if (!confirm('Delete this adjustment?')) return;
+    await window.api.adjustments.delete(adjId);
+    load();
+  }
+
   const yearCardEarnings = useMemo(() => {
     if (!program || year == null) return [];
     return cardEarnings.filter(c => c.program_id === id && programYearOf(c.entry_date, program.year_type) === year);
@@ -152,20 +159,55 @@ export default function ProgramDetail() {
             <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{proj.currentStatusTier ?? 'No status'}</p>
             <p className="text-[11px] text-slate-500">
               {proj.lifetimeTier ? `Lifetime floor: ${proj.lifetimeTier}. ` : ''}
-              {proj.heldFromYear != null ? `Earned from ${proj.heldFromYear}: ${proj.heldTier ?? 'none'} (${totalsText(proj.heldTotals)})` : 'No completed program-year data.'}
+              {proj.heldFromYear != null ? `Earned from ${proj.heldFromYear}: ${proj.heldTier ?? 'none'} (${totalsText(proj.heldTotals, id)})` : 'No completed program-year data.'}
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
             <p className="text-xs uppercase text-slate-400">Year-to-date</p>
             <p className="text-lg font-bold">{proj.ytdTier ?? 'No status'}</p>
-            <p className="text-[11px] text-slate-500">{totalsText(proj.ytdTotals)}</p>
+            <p className="text-[11px] text-slate-500">{totalsText(proj.ytdTotals, id)}</p>
           </div>
           <div className="rounded-lg border border-primary-200 dark:border-primary-800 p-3">
             <p className="text-xs uppercase text-slate-400">Projected</p>
             <p className="text-lg font-bold text-primary-600 dark:text-primary-400">{proj.projectedTier ?? 'No status'}</p>
-            <p className="text-[11px] text-slate-500">{totalsText(proj.projectedTotals)}</p>
+            <p className="text-[11px] text-slate-500">{totalsText(proj.projectedTotals, id)}</p>
           </div>
         </div>
+
+        {/* v1.5.1: source breakdown so a metric total can be reconciled against its components. */}
+        {proj.metricSourceBreakdown && Object.keys(proj.metricSourceBreakdown).length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs uppercase text-slate-400 mb-1">Where these {year}-to-date numbers come from</p>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-400">
+                  <th className="py-1 pr-2">Metric</th>
+                  <th className="py-1 pr-2">Trips</th>
+                  <th className="py-1 pr-2">Adjustments</th>
+                  <th className="py-1 pr-2">Card earnings</th>
+                  <th className="py-1 pr-2">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(proj.metricSourceBreakdown).map(([key, b]) => (
+                  <tr key={key} className="border-t border-slate-100 dark:border-slate-800">
+                    <td className="py-1 pr-2 font-medium">{displayMetricKey(id, key)}</td>
+                    <td className="py-1 pr-2">{b.trips.toLocaleString()}</td>
+                    <td className="py-1 pr-2">{b.adjustments.toLocaleString()}</td>
+                    <td className="py-1 pr-2">{b.cardEarnings.toLocaleString()}</td>
+                    <td className="py-1 pr-2 font-semibold">{(b.trips + b.adjustments + b.cardEarnings).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-1 text-[11px] text-slate-500">
+              For American AAdvantage and Delta SkyMiles, the Trips column reflects the
+              auto-calculated LP/MQD value (from flight segment cost), not just manually-entered
+              values. If a total looks too high, check here first for a source you didn't expect
+              (e.g. a trip's auto-calc plus a separate card-earnings entry for the same activity).
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Manual status editing (override + lifetime) */}
@@ -288,7 +330,7 @@ export default function ProgramDetail() {
                     <td className="py-1.5 font-medium">{trip.label}</td>
                     <td className="py-1.5">{trip.status}</td>
                     <td className="py-1.5">{e.is_estimate === 1 ? 'estimate' : 'actual'}</td>
-                    <td className="py-1.5 text-slate-600 dark:text-slate-300">{totalsText(JSON.parse(e.metric_values))}</td>
+                    <td className="py-1.5 text-slate-600 dark:text-slate-300">{totalsText(JSON.parse(e.metric_values), id)}</td>
                     <td className="py-1.5 text-right">
                       <button className="btn-ghost text-xs" onClick={() => navigate(`/trips?edit=${trip.id}`)}>Edit</button>
                     </td>
@@ -326,14 +368,17 @@ export default function ProgramDetail() {
           <h2 className="font-semibold mb-2">Year adjustments ({year})</h2>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs text-slate-400 uppercase"><th className="py-1">Type</th><th>Metrics</th><th>Notes</th></tr>
+              <tr className="text-left text-xs text-slate-400 uppercase"><th className="py-1">Type</th><th>Metrics</th><th>Notes</th><th></th></tr>
             </thead>
             <tbody>
               {yearAdjustments.map(a => (
                 <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="py-1.5">{a.adjustment_type}</td>
-                  <td className="py-1.5 text-slate-600 dark:text-slate-300">{totalsText(JSON.parse(a.metric_values))}</td>
+                  <td className="py-1.5 text-slate-600 dark:text-slate-300">{totalsText(JSON.parse(a.metric_values), id)}</td>
                   <td className="py-1.5 text-slate-500">{a.notes ?? ''}</td>
+                  <td className="py-1.5 text-right">
+                    <button className="btn-ghost text-xs text-red-600" onClick={() => removeAdjustment(a.id)}>Delete</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -356,7 +401,7 @@ export default function ProgramDetail() {
                 {list.map(t => (
                   <tr key={t.id} className="border-t border-slate-100 dark:border-slate-800">
                     <td className="py-1.5 font-medium">{t.tier_name}</td>
-                    <td className="py-1.5 text-slate-600 dark:text-slate-300">{reqText(JSON.parse(t.requirements))}</td>
+                    <td className="py-1.5 text-slate-600 dark:text-slate-300">{reqText(JSON.parse(t.requirements), id)}</td>
                   </tr>
                 ))}
               </tbody>

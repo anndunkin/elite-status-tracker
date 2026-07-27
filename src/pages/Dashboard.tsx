@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { ProgramProjection, TierRequirement, TripWithDetails } from '../../electron/types';
 import { selectDashboardTrips } from '../../electron/rules';
+import { displayMetricKey } from '../lib/metricLabels';
 
-function reqLabel(reqs: TierRequirement[]): string {
+function reqLabel(reqs: TierRequirement[], programId?: string): string {
   const groups = new Map<number, TierRequirement[]>();
   for (const r of reqs) {
     const k = r.group ?? 0;
@@ -11,7 +12,7 @@ function reqLabel(reqs: TierRequirement[]): string {
     groups.get(k)!.push(r);
   }
   return [...groups.values()]
-    .map(g => g.map(r => `${r.threshold.toLocaleString()} ${r.metric}`).join(' + '))
+    .map(g => g.map(r => `${r.threshold.toLocaleString()} ${displayMetricKey(programId, r.metric)}`).join(' + '))
     .join('  OR  ');
 }
 
@@ -24,18 +25,18 @@ function progressToNext(p: ProgramProjection): { pct: number; text: string } | n
   });
   const lead = parts[0];
   const pct = Math.min(100, Math.round((lead.have / lead.need) * 100));
-  const text = parts.map(x => `${x.have.toLocaleString()} / ${x.need.toLocaleString()} ${x.metric}`).join(', ');
+  const text = parts.map(x => `${x.have.toLocaleString()} / ${x.need.toLocaleString()} ${displayMetricKey(p.program.id, x.metric)}`).join(', ');
   return { pct, text };
 }
 
-function totalsText(totals: Record<string, number>): string {
+function totalsText(totals: Record<string, number>, programId?: string): string {
   const keys = Object.keys(totals);
   if (!keys.length) return '—';
-  return keys.map(k => `${totals[k].toLocaleString()} ${k}`).join(', ');
+  return keys.map(k => `${totals[k].toLocaleString()} ${displayMetricKey(programId, k)}`).join(', ');
 }
 
-function StatusRow({ label, tier, totals, tone }:
-  { label: string; tier: string | null; totals?: Record<string, number>; tone: 'current' | 'ytd' | 'projected' }) {
+function StatusRow({ label, tier, totals, tone, programId }:
+  { label: string; tier: string | null; totals?: Record<string, number>; tone: 'current' | 'ytd' | 'projected'; programId?: string }) {
   const badge = tone === 'current'
     ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300'
     : tone === 'ytd'
@@ -45,7 +46,7 @@ function StatusRow({ label, tier, totals, tone }:
     <div className="flex items-baseline justify-between gap-2 text-sm">
       <span className="text-xs uppercase text-slate-400 w-20 shrink-0">{label}</span>
       <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${badge}`}>{tier ?? 'No status'}</span>
-      {totals && <span className="ml-auto text-[11px] text-slate-500 dark:text-slate-400 text-right">{totalsText(totals)}</span>}
+      {totals && <span className="ml-auto text-[11px] text-slate-500 dark:text-slate-400 text-right">{totalsText(totals, programId)}</span>}
     </div>
   );
 }
@@ -197,9 +198,9 @@ export default function Dashboard() {
               )}
 
               <div className="mt-3 space-y-1.5">
-                <StatusRow label="Current" tier={p.currentStatusTier} tone="current" />
-                <StatusRow label="YTD" tier={p.ytdTier} totals={p.ytdTotals} tone="ytd" />
-                <StatusRow label="Projected" tier={p.projectedTier} totals={p.projectedTotals} tone="projected" />
+                <StatusRow label="Current" tier={p.currentStatusTier} tone="current" programId={p.program.id} />
+                <StatusRow label="YTD" tier={p.ytdTier} totals={p.ytdTotals} tone="ytd" programId={p.program.id} />
+                <StatusRow label="Projected" tier={p.projectedTier} totals={p.projectedTotals} tone="projected" programId={p.program.id} />
               </div>
 
               {lm && (
@@ -236,7 +237,7 @@ export default function Dashboard() {
                     </>
                   )}
                   {p.nextTierRequirements && (
-                    <p className="mt-1 text-[11px] text-slate-400">Requires: {reqLabel(p.nextTierRequirements)}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">Requires: {reqLabel(p.nextTierRequirements, p.program.id)}</p>
                   )}
                 </div>
               ) : (

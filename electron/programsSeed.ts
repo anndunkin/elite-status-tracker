@@ -13,8 +13,8 @@ export interface SeedProgram {
 }
 
 export const SEED_PROGRAMS: SeedProgram[] = [
-  { id: 'aa', name: 'American AAdvantage', type: 'airline', is_active: 1, year_type: 'aa_status_year', metric_keys: ['points', 'spend'] },
-  { id: 'dl', name: 'Delta SkyMiles', type: 'airline', is_active: 1, year_type: 'calendar', metric_keys: ['mqd', 'mqm'] },
+  { id: 'aa', name: 'American AAdvantage', type: 'airline', is_active: 1, year_type: 'aa_status_year', metric_keys: ['points'] },
+  { id: 'dl', name: 'Delta SkyMiles', type: 'airline', is_active: 1, year_type: 'calendar', metric_keys: ['mqd'] },
   { id: 'as', name: 'Alaska / Atmos Rewards', type: 'airline', is_active: 1, year_type: 'calendar', metric_keys: ['points'] },
   { id: 'ua', name: 'United MileagePlus', type: 'airline', is_active: 1, year_type: 'calendar', metric_keys: ['pqp', 'pqf'] },
   { id: 'hh', name: 'Hilton Honors', type: 'hotel', is_active: 1, year_type: 'calendar', metric_keys: ['nights', 'stays', 'spend'] },

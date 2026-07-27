@@ -244,6 +244,12 @@ export interface ProgramProjection {
   nextTier: string | null;
   nextTierRequirements: TierRequirement[] | null;
   tiers: Array<{ tier_name: string; tier_order: number; requirements: TierRequirement[] }>;
+  // v1.5.1: per-source subtotal breakdown of the current program-year's YTD actuals,
+  // so a metric total can be audited/reconciled against its component sources
+  // (trips vs. year adjustments vs. credit-card earnings). Populated for every
+  // program's current program-year; for AA/Delta the trip subtotal reflects the
+  // auto-derived LP/MQD values, not just explicitly-entered ones.
+  metricSourceBreakdown: Record<string, { trips: number; adjustments: number; cardEarnings: number }>;
 }
 
 // ─── File payload (portable snapshot + JSON export/import) ──────────────────────
@@ -315,6 +321,8 @@ export interface WindowApi {
   };
   adjustments: {
     all: () => Promise<ProgramYearAdjustment[]>;
+    delete: (id: number) => Promise<boolean>;
+    deleteForProgramYear: (programId: string, year: number) => Promise<number>;
   };
   airports: {
     distance: (a: string, b: string) => Promise<number | null>;

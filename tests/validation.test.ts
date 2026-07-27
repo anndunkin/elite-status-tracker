@@ -4,6 +4,7 @@ import {
   tripCreate, tripUpdate, programCreateRuleVersion, importFilePayload, buildFilePayload,
   cardEarningCreate, cardEarningUpdate, lifetimeStatusSet,
   statusOverrideSet, statusOverridesGetAll, statusOverrideClear,
+  adjustmentDelete,
 } from '../electron/database';
 import { lookupAirport, haversineMiles } from '../electron/airports';
 import { viewYearToDate } from '../electron/rules';
@@ -178,5 +179,13 @@ describe('manual status override validation', () => {
   it('rejects an invalid tier name for a generalized (non-Hilton) lifetime status', () => {
     const db = seededDb();
     expect(() => lifetimeStatusSet(db, { program_id: 'aa', tier_name: 'Nonsense', achieved_date: null, notes: null })).toThrow(/tier/i);
+  });
+});
+
+describe('adjustment deletion validation (v1.5)', () => {
+  it('rejects negative deletion ids gracefully (no throw, no match)', () => {
+    const db = seededDb();
+    expect(() => adjustmentDelete(db, -1)).not.toThrow();
+    expect(adjustmentDelete(db, -1)).toBe(false);
   });
 });

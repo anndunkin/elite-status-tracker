@@ -217,6 +217,75 @@ former was always correct; the latter fell back to Electron's default because
   app's `resources/assets/` so the file physically exists at runtime (the installer
   header's own icon is not readable by the running process). `win.icon` and
   `signAndEditExecutable: false` are unchanged; the signing pipeline is untouched.
+- **Windows icon cache**: because Windows aggressively caches shell icons by
+  path/hash, upgrading from a pre-v1.4 install (single-size or missing icon) may
+  keep showing the stale icon even after the new build is installed. If this
+  happens: uninstall the previous version, delete
+  `%LOCALAPPDATA%\IconCache.db` (or run `ie4uinit.exe -show` to force an icon
+  cache rebuild), reinstall, then reboot (or at minimum restart Explorer).
+
+### Startup data migrations & metric derivation (v1.5)
+
+v1.5 introduces an idempotent startup migration pipeline plus two auto-derived
+metrics, all in `electron/database.ts`:
+
+- **`applyDataMigrations(db)`** runs on every `openDatabaseAt(...)` call, after
+  `seedIfFresh`, and is safe to call repeatedly. It runs, in order:
+  1. `ensureLifetimeMileageRows(db)` — `INSERT OR IGNORE`s any `SEED_LIFETIME_MILEAGE`
+     row that's missing (e.g. the Delta Million Miler baseline), never
+     overwriting an existing row.
+  2. `ensureDeltaMetricKeys(db)` / `ensureAaMetricKeys(db)` — rewrite
+     `programs.metric_keys` for `dl`/`aa` to drop the retired `mqm`/`spend` keys
+     if still present.
+  3. `stripDeltaMqmValues(db)` / `stripAaSpendValues(db)` — remove any leftover
+     `mqm`/`spend` key from stored `trip_program_entries`/`program_year_adjustments`
+     JSON for `dl`/`aa` respectively; other programs (including Hilton's and
+     Marriott's own `spend` metric) are untouched.
+  4. `deleteDelta2026AdjustmentsOnce(db)` — one-time cleanup of 2026 Delta
+     adjustments entered under the old MQM-inclusive rules, gated by an
+     `app_meta` key (`delta_2026_adjustments_cleared`) so it never re-runs.
+  Each step returns a count/boolean folded into a `DataMigrationsSummary` that
+  `main.ts` logs via `logError()` on every launch.
+- **Delta MQD derivation**: inside `computeProjections`'s trip/entry loop, if
+  `program.id === 'dl'` and the entry's `metric_values.mqd` is `undefined`, the
+  sum of `cost_usd` across the trip's `dl` segments becomes the MQD value ($1 =
+  1 MQD). An explicit `mqd` always wins.
+- **AA LP derivation**: because the multiplier depends on the tier held
+  *entering* the current AA status year — which itself depends on prior-year
+  totals — `computeProjections` first buckets every program's actual/estimate
+  metrics using only explicitly-entered values (as before), resolves
+  `heldTier`/`lifetimeStatus`/`statusOverride`/`currentStatusTier` from that raw
+  data, and only then (for `program.id === 'aa'` alone) re-derives the current
+  program-year's totals: any AA entry with `metric_values.points === undefined`
+  gets `points = Math.round(segmentCosts * statusMultiplierForAA(currentStatusTier))`.
+  `statusMultiplierForAA` is exported from `electron/database.ts` (5x/7x/8x/9x/11x
+  for no-status/Gold/Platinum/Platinum Pro/Executive Platinum); a renderer-safe
+  duplicate, `statusMultiplierForAAPreview`, lives in `src/lib/metricLabels.ts`
+  for the Trip editor's convenience pre-fill only, so the browser bundle never
+  imports `electron/database.ts` (which pulls in `better-sqlite3`/Node builtins).
+- **Display-only metric renaming**: `displayMetricKey(programId, key)` in
+  `src/lib/metricLabels.ts` maps AA's stored `points` key to the label "LPs"
+  wherever metric totals or tier requirements are rendered
+  (`Dashboard.tsx`, `ProgramDetail.tsx`, `Trips.tsx`); no other program or
+  storage key is affected.
+- **Adjustment delete**: `adjustmentDelete(db, id)` and
+  `adjustmentsDeleteForProgramYear(db, programId, year)` (both parameterized
+  queries) back the `adjustments:delete` / `adjustments:deleteForProgramYear`
+  IPC channels and the Program Detail page's per-row **Delete** button.
+- **`null` treated like `undefined` in AA derivation**: `mv.points === null`
+  (which can arise from a portable-file JSON export/import round-trip turning a
+  genuinely-absent key into a stored `null`) is now guarded alongside
+  `mv.points === undefined` in `deriveForTrip`'s skip check, so it correctly
+  falls through to the segment-cost auto-calc instead of silently contributing
+  zero LPs. An explicit `0` is unaffected and still short-circuits derivation.
+- **`metricSourceBreakdown`**: `computeProjections` tracks each current
+  program-year metric map's origin (trip / adjustment / card earning)
+  separately as it buckets the raw pass, and — for AA — substitutes the derived
+  trip values (`aaDerivedTripActuals`) so the breakdown always reconciles
+  exactly to `ytdTotals`. Surfaced on `ProgramProjection.metricSourceBreakdown`
+  and rendered as a per-metric trips/adjustments/card-earnings/total table on
+  the Program Detail page, to make source-of-truth discrepancies auditable
+  without needing to inspect the database directly.
 
 ## Testing
 
@@ -224,16 +293,19 @@ Vitest, four node-environment suites:
 
 - **security** — SQL-injection resistance, no `eval`/`new Function`, Electron
   hardening flags, CSP, navigation guards, preload surface, path-traversal guard,
-  and (v1.4) icon-path resolution: the `BrowserWindow` icon option and
+  icon-path resolution (v1.4): the `BrowserWindow` icon option and
   `setAppUserModelId` wiring, the fixed-constant icon path, dev/packaged
   containment within the assets directory, and a regression assertion that the
-  dashboard panel reorder adds no IPC/data-access surface.
+  dashboard panel reorder adds no IPC/data-access surface; and (v1.5) ICO
+  container/multi-size validation for `assets/icon.ico`, plus parameterized-query
+  coverage for `adjustmentDelete`/`adjustmentsDeleteForProgramYear`.
 - **validation** — required fields, CHECK constraints, airport lookups, JSON
   import schema/version, export→import round-trip.
 - **boundary** — zero/negative/missing metrics, AA Feb 28/29 & Mar 1 boundaries,
   leap years, empty DB, one-tier-away, very large totals, `classifyTripByDate`
-  edge dates (day-before/on/day-after today, in-progress, `end_date`-driven), and
-  `viewYearToDate` clamping (min/max/fractional/Dec-31 mapping).
+  edge dates (day-before/on/day-after today, in-progress, `end_date`-driven),
+  `viewYearToDate` clamping (min/max/fractional/Dec-31 mapping), and (v1.5)
+  non-existent-id and no-match cases for adjustment deletion.
 - **functionality** — CRUD, projection correctness, airmile spot checks,
   fresh-DB seeding (reference/rules present, zero historical trips),
   non-destructive re-seed of an existing populated DB, rule-version management,
@@ -241,15 +313,21 @@ Vitest, four node-environment suites:
   lifetime-status floor, three-part status separation, Delta lifetime-mileage
   accrual, Marriott/Hyatt rule confirmation, MAX-precedence current-tier
   resolution across all present/absent combinations, the AA Executive
-  Platinum permanent-lifetime regression fixture, and the v1.3 dashboard year-view
+  Platinum permanent-lifetime regression fixture, the v1.3 dashboard year-view
   (synthetic `today` projection for both year types incl. an AA status-year
   boundary crossing; `selectDashboardTrips` restricting to the selected calendar
   year while classifying against the real `now`; the "viewing next year → future
   trip is upcoming not overdue" case and its last-year mirror; legitimately-empty
-  sections).
+  sections), (v1.5) all four Delta/AA startup migration helpers, Delta MQD
+  and AA LP auto-derivation in `computeProjections` (explicit-value overrides,
+  estimate/actual bucketing, all five AA earning-rate tiers), and
+  `adjustmentDelete`/`adjustmentsDeleteForProgramYear` CRUD, plus the AA
+  `null`-vs-`undefined` derivation guard, explicit-zero and
+  explicit-wins-over-larger-derived cases, and `metricSourceBreakdown`
+  reconciliation for both AA and Delta.
 
-133 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2, 23 for v1.3, 8 for v1.4),
-all passing. The security suite is 24 tests (16 through v1.3 + 8 icon/reorder tests
-in v1.4).
+162 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2, 23 for v1.3, 8 for v1.4,
+29 for v1.5), all passing. The security suite is 28 tests (24 through v1.4 + 4
+icon-container/adjustment-delete tests in v1.5).
 
 The portable JSON payload is at `APP_FILE_VERSION = 3` (adds `status_overrides`).

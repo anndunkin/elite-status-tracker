@@ -36,7 +36,8 @@ status values:
 **Click any card** to open its **Program Detail** page — a full breakdown of the
 metric totals behind each status value, the trips crediting toward the program
 this year (click **Edit** to jump straight to a trip), card-earnings entries, year
-adjustments, and the tier table.
+adjustments (each row has a **Delete** button, with a confirmation prompt, for
+removing a mistaken or superseded adjustment), and the tier table.
 
 ### Trip attention lists
 
@@ -133,14 +134,49 @@ Entries can be filtered by program, edited, and deleted at any time.
 3. Under **Program credit**, click **+ Entry** for each program the trip earns
    toward. Tick **estimate** for planned/booked expectations; leave it unticked
    for confirmed, posted actuals. Fill in the metric fields shown for that
-   program (e.g. points, nights, MQD).
+   program (e.g. LPs, nights, MQD).
 4. (Optional) Add **flight segments**. Type the origin and destination airport
    codes (e.g. `SEA`, `NRT`) and the great-circle distance fills in
    automatically; you can override it or enter one manually for unknown codes.
+   Add a **Cost** value on a segment to drive the auto-calculated metrics below.
 5. **Save Trip.** The dashboard updates immediately.
 
 > Trips imported from the historical spreadsheet show a `*` next to the date —
 > their month/day is an estimate.
+
+### Auto-calculated metrics (Delta MQDs, American LPs)
+
+Two programs derive their qualifying metric from flight segment **Cost** instead
+of requiring you to type it in by hand:
+
+- **Delta SkyMiles MQDs** — $1 of segment cost = 1 MQD. The Delta entry in the
+  Trip editor hides the old manual MQD field entirely; just add your flight
+  segments with a Cost value and the MQD total is calculated automatically at
+  save/projection time. If you ever need an exact value that differs from raw
+  spend (a promotion, a companion fare, etc.), you can still enter one directly
+  by editing the stored entry — an explicit MQD always overrides the auto-calc.
+  **Delta MQMs (Medallion Qualification Miles) are no longer tracked at all** —
+  Delta retired them, so only MQDs matter now.
+- **American AAdvantage LPs (Loyalty Points)** — `cost × your current AA earning
+  multiplier`, where the multiplier depends on the AA elite tier you hold
+  entering the current status year: 5x with no status, 7x Gold, 8x Platinum, 9x
+  Platinum Pro, 11x Executive Platinum. The AA entry's **LPs** field is
+  pre-filled with an estimate when you add flight segments with a Cost value —
+  type over it with the exact posted amount once American credits the trip, and
+  your manual value takes priority over the estimate. AA's old `spend` metric
+  has been removed; only LPs are tracked. (The metric is labeled "LPs" in the
+  interface, but is still stored under its original `points` key internally.)
+
+### Where did this number come from?
+
+Every program's Program Detail page includes a **"Where these numbers come
+from"** table showing, for the current program-year, how much of each metric
+came from **trips**, **year adjustments**, and **credit-card earnings** — with a
+total column that always adds up to the displayed Year-to-date figure. If a
+total looks higher or lower than you expect, check this table first: it's the
+fastest way to spot a source you didn't intend (for example, a trip whose LPs
+were auto-calculated from segment cost *and* a separate card-earnings entry
+logged for that same activity).
 
 ## Editing program rules
 
