@@ -252,6 +252,8 @@ export interface DataMigrationsSummary {
   delta2026AdjustmentsCleared: number | null;
   aaMetricKeysFixed: boolean;
   aaSpendStripped: number;
+  derivableZerosStripped: number | null;
+  segmentProgramIdsNormalized: number;
 }
 
 /** INSERT OR IGNORE each SEED_LIFETIME_MILEAGE row; never rewrites an existing baseline. */
@@ -365,7 +367,57 @@ export function stripAaSpendValues(database: Database.Database): number {
   return updated;
 }
 
-/** Runs all v1.5 startup migrations, in order, and returns a summary for logging. */
+/**
+ * v1.6 one-time cleanup. Delta MQDs and AA Loyalty Points are *derived* from segment cost
+ * whenever the stored metric value is absent, but a stored `0` (or `null`) reads as "the user
+ * explicitly entered zero" and permanently suppresses derivation. Older builds could write a
+ * `0` without the user meaning it — clearing the LP number input wrote `Number('') === 0`, and
+ * a JSON round-trip through the portable app file could turn an absent key into `null`. Strip
+ * those so derivation takes over.
+ *
+ * Gated by `app_meta.derivable_zeros_stripped` so it runs exactly once: a user who deliberately
+ * records a zero *after* the migration keeps it. Returns rows changed, or null if already run.
+ */
+export function stripDerivableZeroMetricsOnce(database: Database.Database): number | null {
+  if (metaGet(database, 'derivable_zeros_stripped')) return null;
+
+  const derivable: Array<{ programId: string; key: string }> = [
+    { programId: 'dl', key: 'mqd' },
+    { programId: 'aa', key: 'points' },
+  ];
+  const select = database.prepare('SELECT id, metric_values FROM trip_program_entries WHERE program_id = ?');
+  const update = database.prepare('UPDATE trip_program_entries SET metric_values = ? WHERE id = ?');
+  let updated = 0;
+
+  const tx = database.transaction(() => {
+    for (const { programId, key } of derivable) {
+      const rows = select.all(programId) as Array<{ id: number; metric_values: string }>;
+      for (const row of rows) {
+        let mv: Record<string, number | null>;
+        try { mv = JSON.parse(row.metric_values) as Record<string, number | null>; } catch { continue; }
+        if (!(key in mv)) continue;
+        if (mv[key] !== 0 && mv[key] !== null) continue;
+        const { [key]: _stripped, ...rest } = mv;
+        update.run(JSON.stringify(rest), row.id);
+        updated += 1;
+      }
+    }
+    metaSet(database, 'derivable_zeros_stripped', new Date().toISOString().slice(0, 10));
+  });
+  tx();
+  return updated;
+}
+
+/**
+ * Rewrite empty-string `trip_segments.program_id` values to NULL. Both read as "untagged"
+ * everywhere, but only NULL satisfies the column's `REFERENCES programs(id)` constraint, so an
+ * empty string is a foreign-key violation waiting to surface. Returns rows changed.
+ */
+export function normalizeSegmentProgramIds(database: Database.Database): number {
+  return database.prepare(`UPDATE trip_segments SET program_id = NULL WHERE program_id = ''`).run().changes;
+}
+
+/** Runs all startup migrations, in order, and returns a summary for logging. */
 export function applyDataMigrations(database: Database.Database): DataMigrationsSummary {
   const mileageAdded = ensureLifetimeMileageRows(database);
   const metricKeysFixed = ensureDeltaMetricKeys(database);
@@ -373,9 +425,11 @@ export function applyDataMigrations(database: Database.Database): DataMigrations
   const delta2026AdjustmentsCleared = deleteDelta2026AdjustmentsOnce(database);
   const aaMetricKeysFixed = ensureAaMetricKeys(database);
   const aaSpendStripped = stripAaSpendValues(database);
+  const derivableZerosStripped = stripDerivableZeroMetricsOnce(database);
+  const segmentProgramIdsNormalized = normalizeSegmentProgramIds(database);
   return {
     mileageAdded, metricKeysFixed, mqmStripped, delta2026AdjustmentsCleared,
-    aaMetricKeysFixed, aaSpendStripped,
+    aaMetricKeysFixed, aaSpendStripped, derivableZerosStripped, segmentProgramIdsNormalized,
   };
 }
 
@@ -661,11 +715,14 @@ function writeEntriesAndSegments(database: Database.Database, tripId: number, da
   if (data.segments) {
     database.prepare('DELETE FROM trip_segments WHERE trip_id = ?').run(tripId);
     for (const s of data.segments) {
+      // An empty program_id means "untagged" and must be stored as NULL — '' would violate the
+      // column's REFERENCES programs(id) constraint. An unknown non-empty id is rejected by that
+      // same constraint, which is the intended behavior: a segment cannot cite a missing program.
       database.prepare(`
         INSERT INTO trip_segments (trip_id, origin_airport, destination_airport, distance_miles, cost_usd, program_id, fare_class)
         VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
         tripId, s.origin_airport ?? null, s.destination_airport ?? null,
-        s.distance_miles ?? null, s.cost_usd ?? null, s.program_id ?? null, s.fare_class ?? null);
+        s.distance_miles ?? null, s.cost_usd ?? null, s.program_id || null, s.fare_class ?? null);
     }
   }
 }
@@ -729,12 +786,15 @@ export function statusMultiplierForAA(tier: string | null | undefined): number {
 
 /**
  * Sum `cost_usd` across a trip's segments for a given program, preferring segments explicitly
- * tagged with that program_id, but falling back to ALL of the trip's segments when none are
- * explicitly tagged (the common case, since the segment editor has no per-segment program
- * picker). This avoids double-crediting a mixed-program trip (one where some segments ARE
- * explicitly tagged for a different program) while still working for the untagged-segment case.
+ * tagged with that program_id, but falling back to the trip's UNTAGGED segments when none are
+ * tagged for it. Tagging is the accurate path (and since v1.6 the segment editor has a per-segment
+ * Program picker that pre-selects the trip's program), while the untagged fallback keeps every
+ * pre-v1.6 trip crediting exactly as it did before.
+ *
+ * The two candidate sets are disjoint on program_id — explicitly tagged vs. empty — so a mixed
+ * program trip can never double-credit one segment to two programs once its segments are tagged.
  */
-function deriveSegmentCost(segments: TripSegment[], programId: string): number {
+export function deriveSegmentCost(segments: TripSegment[], programId: string): number {
   const taggedSegs = segments.filter(s => s.program_id === programId && typeof s.cost_usd === 'number');
   const untaggedSegs = segments.filter(s => !s.program_id && typeof s.cost_usd === 'number');
   const costSource = taggedSegs.length > 0 ? taggedSegs : untaggedSegs;
@@ -777,13 +837,10 @@ export function computeProjections(database: Database.Database, today: Date = ne
         if (e.program_id !== program.id) continue;
         let mv = JSON.parse(e.metric_values) as Record<string, number>;
         // Delta MQDs are derived automatically from segment cost when not explicitly entered.
-        // Segments are rarely tagged with an explicit program_id (Trips.tsx has no per-segment
-        // program dropdown), so prefer explicitly-tagged Delta segments if any exist, but fall
-        // back to ALL of the trip's segments when none are explicitly tagged — this is safe
-        // because we only reach this branch for a trip_program_entries row that IS for Delta
-        // (program.id === 'dl' here), so an untagged segment on this trip belongs to this
-        // credit unless some other segment was explicitly tagged for a different program.
-        if (program.id === 'dl' && mv.mqd === undefined) {
+        // An explicit user-entered value (including an explicit 0) always wins; only a missing
+        // or null value derives — matching the AA `points` rule below, since a JSON round-trip
+        // (portable-file export/import) can turn a genuinely-absent key into a stored `null`.
+        if (program.id === 'dl' && (mv.mqd === undefined || mv.mqd === null)) {
           const derivedMqd = deriveSegmentCost(trip.segments, 'dl');
           if (derivedMqd > 0) mv = { ...mv, mqd: derivedMqd };
         }

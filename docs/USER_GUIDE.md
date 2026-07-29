@@ -139,22 +139,53 @@ Entries can be filtered by program, edited, and deleted at any time.
    codes (e.g. `SEA`, `NRT`) and the great-circle distance fills in
    automatically; you can override it or enter one manually for unknown codes.
    Add a **Cost** value on a segment to drive the auto-calculated metrics below.
-5. **Save Trip.** The dashboard updates immediately.
+5. Set each segment's **Program** — the program that segment's cost earns
+   toward. If the trip has exactly one program entry, new segments are tagged
+   with it for you; if it credits several programs, the dropdown starts blank so
+   you can say which leg flew on which airline. See *Tagging segments with a
+   program* below.
+6. **Save Trip.** The dashboard updates immediately.
 
 > Trips imported from the historical spreadsheet show a `*` next to the date —
 > their month/day is an estimate.
 
+### Tagging segments with a program
+
+Each flight segment has a **Program** dropdown. It answers one question: *which
+program earns this segment's cost?* That matters because Delta MQDs and American
+Loyalty Points are calculated from segment cost (see below).
+
+- **Single-program trip** — new segments are tagged automatically with the trip's
+  program. Nothing to do.
+- **Mixed-program trip** — tag each segment yourself. A Seattle–Atlanta leg on
+  Delta and an Atlanta–Miami leg on American should be tagged `dl` and `aa`
+  respectively, so each program is credited only with its own cost. Without tags
+  the app has to fall back to counting *all* the trip's cost toward whichever
+  program it happens to be calculating, which inflates both.
+- **Leaving it blank (`—`)** is still valid and means "untagged". Untagged
+  segments are credited to the trip's program as long as *no* segment is tagged
+  for that program — which is how every trip created before v1.6 keeps working
+  unchanged. As soon as you tag one segment for a program, only tagged segments
+  count toward it, so tag them all or none.
+
+Adding a program entry never retags segments you already entered. If a trip
+credits Delta or American and still has untagged priced segments, the editor
+shows a reminder under *Flight segments*.
+
 ### Auto-calculated metrics (Delta MQDs, American LPs)
 
 Two programs derive their qualifying metric from flight segment **Cost** instead
-of requiring you to type it in by hand:
+of requiring you to type it in by hand. Both use the segment **Program** tag to
+decide which costs belong to them:
 
 - **Delta SkyMiles MQDs** — $1 of segment cost = 1 MQD. The Delta entry in the
   Trip editor hides the old manual MQD field entirely; just add your flight
-  segments with a Cost value and the MQD total is calculated automatically at
-  save/projection time. If you ever need an exact value that differs from raw
-  spend (a promotion, a companion fare, etc.), you can still enter one directly
-  by editing the stored entry — an explicit MQD always overrides the auto-calc.
+  segments with a Cost value, tag them **Delta**, and the MQD total is calculated
+  automatically at save/projection time. The Delta entry shows the running total
+  ("Currently 500 MQDs.") so you can confirm it picked up your segments. If you
+  ever need an exact value that differs from raw spend (a promotion, a companion
+  fare, etc.), you can still enter one directly by editing the stored entry — an
+  explicit MQD always overrides the auto-calc.
   **Delta MQMs (Medallion Qualification Miles) are no longer tracked at all** —
   Delta retired them, so only MQDs matter now.
 - **American AAdvantage LPs (Loyalty Points)** — `cost × your current AA earning
@@ -163,7 +194,10 @@ of requiring you to type it in by hand:
   Platinum Pro, 11x Executive Platinum. The AA entry's **LPs** field is
   pre-filled with an estimate when you add flight segments with a Cost value —
   type over it with the exact posted amount once American credits the trip, and
-  your manual value takes priority over the estimate. AA's old `spend` metric
+  your manual value takes priority over the estimate. To go back to the
+  auto-calculated figure, **clear the field** rather than typing `0`; a `0` you
+  enter on purpose is treated as a real value and turns the auto-calc off for
+  that trip. AA's old `spend` metric
   has been removed; only LPs are tracked. (The metric is labeled "LPs" in the
   interface, but is still stored under its original `points` key internally.)
 

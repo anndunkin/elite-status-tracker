@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type {
   Program, TripWithDetails, TripCreate, TripStatus, TripEntryInput, SegmentInput,
 } from '../../electron/types';
-import { displayMetricKey, statusMultiplierForAAPreview } from '../lib/metricLabels';
+import { displayMetricKey, statusMultiplierForAAPreview, segmentCostForProgram } from '../lib/metricLabels';
 
 const STATUSES: TripStatus[] = ['planned', 'booked', 'completed'];
 
@@ -19,6 +19,19 @@ const emptyDraft = (): Draft => ({
 
 function metricKeys(p: Program): string[] {
   try { return JSON.parse(p.metric_keys) as string[]; } catch { return []; }
+}
+
+/**
+ * Clearing a metric input removes the key entirely rather than storing `Number('') === 0`. A
+ * stored 0 reads as an explicit user-entered zero and permanently suppresses the Delta MQD /
+ * AA Loyalty Point derivation from segment cost.
+ */
+function withMetricValue(mv: Record<string, number>, key: string, raw: string): Record<string, number> {
+  if (raw === '') {
+    const { [key]: _cleared, ...rest } = mv;
+    return rest;
+  }
+  return { ...mv, [key]: Number(raw) };
 }
 
 export default function Trips() {
@@ -169,7 +182,18 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
     upd({ entries: draft.entries.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
   const delEntry = (i: number) => upd({ entries: draft.entries.filter((_, j) => j !== i) });
 
-  const addSeg = () => upd({ segments: [...draft.segments, { origin_airport: '', destination_airport: '', distance_miles: null, cost_usd: null, program_id: '' }] });
+  // A new segment is pre-tagged only when the trip's program credit is unambiguous — exactly one
+  // distinct program (a program may appear twice, as an estimate and an actual). With several
+  // programs, or none yet, the picker starts blank so the user chooses which one earns the cost.
+  const entryProgramIds = [...new Set(draft.entries.map(e => e.program_id).filter(Boolean))];
+  const defaultSegProgramId = entryProgramIds.length === 1 ? entryProgramIds[0] : '';
+
+  // Nudge toward tagging only where it changes an outcome: a derivation-driven program is credited
+  // (Delta / AA) and some priced segment is still untagged.
+  const showTaggingHint = entryProgramIds.some(id => id === 'dl' || id === 'aa')
+    && draft.segments.some(s => !s.program_id && typeof s.cost_usd === 'number');
+
+  const addSeg = () => upd({ segments: [...draft.segments, { origin_airport: '', destination_airport: '', distance_miles: null, cost_usd: null, program_id: defaultSegProgramId }] });
   const setSeg = (i: number, patch: Partial<SegDraft>) =>
     upd({ segments: draft.segments.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
   const delSeg = (i: number) => upd({ segments: draft.segments.filter((_, j) => j !== i) });
@@ -232,10 +256,9 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
               // AA Loyalty Points: auto-fill from segment cost (base 5x multiplier; the exact
               // multiplier for the tier held this status year is resolved server-side in
               // computeProjections — this is just a convenience pre-fill, not the final value).
+              const segmentCost = prog ? segmentCostForProgram(draft.segments, prog.id) : 0;
               const aaAutoFillPoints = isAA && e.metric_values.points === undefined
-                ? Math.round(draft.segments
-                    .filter(s => s.program_id === 'aa' && typeof s.cost_usd === 'number')
-                    .reduce((sum, s) => sum + (s.cost_usd as number), 0) * statusMultiplierForAAPreview(null))
+                ? Math.round(segmentCost * statusMultiplierForAAPreview(null))
                 : null;
               return (
                 <div key={i} className="rounded-lg border border-slate-200 dark:border-slate-700 p-3">
@@ -257,20 +280,23 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
                           value={isAA && k === 'points' && e.metric_values.points === undefined && aaAutoFillPoints
                             ? aaAutoFillPoints : (e.metric_values[k] ?? '')}
                           placeholder={isAA && k === 'points' && aaAutoFillPoints ? String(aaAutoFillPoints) : undefined}
-                          onChange={ev => setEntry(i, { metric_values: { ...e.metric_values, [k]: Number(ev.target.value) } })} />
+                          onChange={ev => setEntry(i, { metric_values: withMetricValue(e.metric_values, k, ev.target.value) })} />
                       </div>
                     ))}
                   </div>
                   {isDelta && (
                     <p className="mt-2 text-[11px] text-slate-500">
-                      Delta MQDs auto-calculated from segment cost ($1 = 1 MQD). Add flight segments with a Cost value below.
+                      Delta MQDs auto-calculated from the cost of segments tagged Delta below ($1 = 1 MQD).
+                      Segments left untagged still count while none are tagged Delta.
+                      {segmentCost > 0 && <> Currently {segmentCost.toLocaleString()} MQDs.</>}
                     </p>
                   )}
                   {isAA && (
                     <p className="mt-2 text-[11px] text-slate-500">
-                      AA Loyalty Points auto-calculated from segment cost × your current AA earning multiplier.
-                      Add flight segments with a Cost value below to estimate. Enter posted LPs manually after
-                      the trip completes if you want exact values.
+                      AA Loyalty Points auto-calculated from the cost of segments tagged American below
+                      × your current AA earning multiplier. Segments left untagged still count while none
+                      are tagged American. Enter posted LPs manually after the trip completes if you want
+                      exact values.
                     </p>
                   )}
                   <div className="mt-2">
@@ -291,12 +317,27 @@ function TripEditor({ draft, setDraft, activePrograms, metricKeys, error, onSave
             <button className="btn-ghost" onClick={addSeg}>+ Segment</button>
           </div>
           <div className="space-y-2">
+            {showTaggingHint && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-500">
+                Tag your segments with a program to auto-calculate Delta MQDs / AA Loyalty Points.
+                Untagged segments are credited to this trip&apos;s program only while no segment is tagged for it.
+              </p>
+            )}
             {draft.segments.map((s, i) => (
               <div key={i} className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 dark:border-slate-700 p-2">
                 <div><label className="label">From</label><input className="input w-24 uppercase" value={s.origin_airport} onChange={e => setSeg(i, { origin_airport: e.target.value.toUpperCase() })} onBlur={() => autoDistance(i)} /></div>
                 <div><label className="label">To</label><input className="input w-24 uppercase" value={s.destination_airport} onChange={e => setSeg(i, { destination_airport: e.target.value.toUpperCase() })} onBlur={() => autoDistance(i)} /></div>
                 <div><label className="label">Miles</label><input type="number" className="input w-28" value={s.distance_miles ?? ''} onChange={e => setSeg(i, { distance_miles: e.target.value === '' ? null : Number(e.target.value) })} /></div>
                 <div><label className="label">Cost $</label><input type="number" className="input w-24" value={s.cost_usd ?? ''} onChange={e => setSeg(i, { cost_usd: e.target.value === '' ? null : Number(e.target.value) })} /></div>
+                <div>
+                  <label className="label">Program</label>
+                  <select className="input w-40" value={s.program_id}
+                    onChange={e => setSeg(i, { program_id: e.target.value })}
+                    title="Which program earns this segment's cost. Leave blank to credit it to whichever program the trip is tagged for.">
+                    <option value="">—</option>
+                    {activePrograms.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
                 <button className="btn-ghost text-red-600" onClick={() => delSeg(i)}>×</button>
               </div>
             ))}

@@ -244,12 +244,31 @@ metrics, all in `electron/database.ts`:
   4. `deleteDelta2026AdjustmentsOnce(db)` — one-time cleanup of 2026 Delta
      adjustments entered under the old MQM-inclusive rules, gated by an
      `app_meta` key (`delta_2026_adjustments_cleared`) so it never re-runs.
+  5. (v1.6) `stripDerivableZeroMetricsOnce(db)` — deletes the `mqd` key from `dl`
+     `trip_program_entries` and the `points` key from `aa` ones wherever the
+     stored value is `0` or `null`, so segment-cost derivation takes over. Gated
+     by `app_meta.derivable_zeros_stripped` so it runs exactly once: a zero the
+     user records *after* the migration is a deliberate value and is preserved.
+     Only `trip_program_entries` is swept — `program_year_adjustments` have no
+     segments to derive from, so a zero there is meaningful.
+  6. (v1.6) `normalizeSegmentProgramIds(db)` — rewrites `trip_segments.program_id`
+     of `''` to `NULL`. Both read as "untagged" everywhere, but `''` violates the
+     column's `REFERENCES programs(id)` constraint. Idempotent.
   Each step returns a count/boolean folded into a `DataMigrationsSummary` that
   `main.ts` logs via `logError()` on every launch.
+- **`deriveSegmentCost(segments, programId)`** (exported) is the single rule both
+  derivations use to decide which segment costs belong to a program: sum
+  `cost_usd` across segments explicitly tagged with `programId`, or — when none
+  are tagged for it — across the trip's *untagged* segments. The two candidate
+  sets are disjoint on `program_id`, so a tagged itinerary can never credit one
+  dollar to two programs, while an untagged one behaves exactly as it did before
+  v1.6 (which is what keeps historical trips intact). `src/lib/metricLabels.ts`
+  carries a renderer-safe mirror, `segmentCostForProgram`, so the Trip editor's
+  previews match the stored result; keep the two in sync.
 - **Delta MQD derivation**: inside `computeProjections`'s trip/entry loop, if
-  `program.id === 'dl'` and the entry's `metric_values.mqd` is `undefined`, the
-  sum of `cost_usd` across the trip's `dl` segments becomes the MQD value ($1 =
-  1 MQD). An explicit `mqd` always wins.
+  `program.id === 'dl'` and the entry's `metric_values.mqd` is `undefined` or
+  `null`, `deriveSegmentCost(trip.segments, 'dl')` becomes the MQD value ($1 =
+  1 MQD). An explicit `mqd` — including an explicit `0` — always wins.
 - **AA LP derivation**: because the multiplier depends on the tier held
   *entering* the current AA status year — which itself depends on prior-year
   totals — `computeProjections` first buckets every program's actual/estimate
@@ -278,6 +297,24 @@ metrics, all in `electron/database.ts`:
   `mv.points === undefined` in `deriveForTrip`'s skip check, so it correctly
   falls through to the segment-cost auto-calc instead of silently contributing
   zero LPs. An explicit `0` is unaffected and still short-circuits derivation.
+  (v1.6) The Delta branch now applies the same `undefined || null` guard, so the
+  two derivations agree on what "absent" means.
+- **Per-segment program tagging (v1.6)**: `trip_segments.program_id` has existed
+  since v1.0 but had no UI, so every segment the editor produced was `NULL` and
+  `deriveSegmentCost` always took its untagged fallback — correct for a
+  single-program trip, but double-crediting a mixed-program one. `Trips.tsx` now
+  renders a Program `<select>` per segment row (blank `—` = untagged) and
+  pre-selects the trip's program when the trip's entries name exactly one
+  *distinct* `program_id` (a program may appear twice, as an estimate and an
+  actual, so the entry count alone is not a safe signal). Existing segments are
+  never auto-retagged; an inline hint appears instead when the trip credits
+  `dl`/`aa` and some priced segment is untagged. `writeEntriesAndSegments` stores
+  `s.program_id || null`; an unknown non-empty id is rejected by the foreign key,
+  and since trip writes are transactional the whole trip rolls back.
+- **Clearing a metric input removes the key (v1.6)**: `withMetricValue` in
+  `Trips.tsx` deletes the metric key when the input is emptied, instead of storing
+  `Number('') === 0`. A stored `0` reads as an explicit user value and permanently
+  suppresses MQD/LP derivation — the bug behind "I have to add the MQDs manually".
 - **`metricSourceBreakdown`**: `computeProjections` tracks each current
   program-year metric map's origin (trip / adjustment / card earning)
   separately as it buckets the raw pass, and — for AA — substitutes the derived
@@ -289,7 +326,7 @@ metrics, all in `electron/database.ts`:
 
 ## Testing
 
-Vitest, four node-environment suites:
+Vitest, node-environment suites:
 
 - **security** — SQL-injection resistance, no `eval`/`new Function`, Electron
   hardening flags, CSP, navigation guards, preload surface, path-traversal guard,
@@ -326,8 +363,17 @@ Vitest, four node-environment suites:
   explicit-wins-over-larger-derived cases, and `metricSourceBreakdown`
   reconciliation for both AA and Delta.
 
-162 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2, 23 for v1.3, 8 for v1.4,
-29 for v1.5), all passing. The security suite is 28 tests (24 through v1.4 + 4
-icon-container/adjustment-delete tests in v1.5).
+- **segment-program-tagging** (v1.6) — per-segment program tagging end to end:
+  tagged segments crediting the right program, a mixed Delta + AA trip splitting
+  $400/$600 with no double-counting, untagged back-compat, a tagged segment
+  suppressing its untagged siblings, explicit and `null` value precedence, award
+  tickets with no cost, `deriveSegmentCost` directly, `stripDerivableZeroMetricsOnce`
+  including its run-once gate, and segment `program_id` referential integrity
+  (unknown id rejected by the foreign key and the trip write rolled back; `''`
+  normalized to `NULL`).
+
+198 tests total (61 from v1.0.0, 22 for v1.1, 19 for v1.2, 23 for v1.3, 8 for v1.4,
+29 for v1.5, 16 for v1.5.1, 20 for v1.6), all passing. The security suite is 28
+tests (24 through v1.4 + 4 icon-container/adjustment-delete tests in v1.5).
 
 The portable JSON payload is at `APP_FILE_VERSION = 3` (adds `status_overrides`).

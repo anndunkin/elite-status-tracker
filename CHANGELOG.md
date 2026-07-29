@@ -3,6 +3,82 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-07-29
+
+### Added
+- **Per-segment Program tagging in the trip editor.** Each row under *Flight
+  segments* now has a **Program** dropdown listing the active programs, plus a
+  blank `—` option meaning "untagged". This is the missing piece that made Delta
+  MQD / AA Loyalty Point auto-calculation feel broken: the segment editor had
+  never had a program picker, so every segment it created was saved with an empty
+  `program_id` and the derivation had to guess from the trip's program credit.
+  - New segments are pre-tagged from the trip's own program entries: exactly one
+    distinct program → pre-selected; several → blank, so the user picks which one
+    earns the cost; none yet → blank. (A program can appear twice among the
+    entries — once as an estimate, once as an actual — so the check is on the
+    distinct set of program ids, not the entry count.)
+  - Existing segments are never silently retagged when a program entry changes.
+    An inline hint appears instead, and only when it would change an outcome: the
+    trip credits Delta or AA *and* some priced segment is still untagged.
+  - The Delta helper text now shows the running derived total ("Currently 500
+    MQDs.") so the auto-calc is visibly working rather than being inferred from
+    an empty input.
+
+### Fixed
+- **Mixed-program trips double-credited segment cost.** With no way to tag
+  segments, a trip carrying both a Delta and an American credit fell through to
+  `deriveSegmentCost`'s untagged fallback for *both* programs, so the same
+  dollars counted toward MQDs and Loyalty Points. Tagging makes the split
+  explicit; the tagged and untagged candidate sets are disjoint, so a tagged
+  itinerary can no longer credit one dollar twice.
+- **Clearing a metric input pinned the value to zero.** The trip editor stored
+  `Number('') === 0` when a number field was emptied, and a stored `0` reads as
+  "the user explicitly entered zero", permanently suppressing derivation from
+  segment cost. Clearing a field now removes the key entirely, letting the
+  auto-calc resume. This is the most likely reason MQDs/LPs had to be re-entered
+  by hand after being blanked out once.
+- **A stored `null` MQD no longer suppresses Delta derivation.** The Delta branch
+  of `computeProjections` only treated `undefined` as absent, while the AA branch
+  correctly treated both `undefined` and `null` that way. A portable-file
+  export/import round-trip can turn a genuinely-absent key into a stored `null`,
+  which silently switched Delta auto-calc off. Both branches now agree: only a
+  real user-entered number (including an explicit `0`) wins over derivation.
+- **AA Loyalty Point pre-fill preview always read 0.** The trip editor's LP
+  pre-fill summed only segments explicitly tagged `aa` — of which the editor
+  could never produce any — instead of applying the backend's tagged-preferred /
+  untagged-fallback rule. Preview and stored value now use the same rule, via a
+  shared `segmentCostForProgram` helper in `src/lib/metricLabels.ts`.
+- **Empty-string segment `program_id` is normalized to SQL `NULL` on write.**
+  Both read as "untagged" throughout the app, but `''` violates the
+  `program_id TEXT REFERENCES programs(id)` foreign key and would surface as a
+  write error. A segment tagged with a program id that does *not* exist is still
+  rejected by that constraint, and because trip writes are transactional the
+  whole trip rolls back rather than silently dropping the tag.
+
+### Migrations
+Both run at startup from `applyDataMigrations` and are reported in
+`DataMigrationsSummary` for the app error log.
+- **`stripDerivableZeroMetricsOnce`** — deletes the `mqd` key from Delta
+  `trip_program_entries` and the `points` key from American ones wherever the
+  stored value is `0` or `null`, so derivation from segment cost takes over.
+  Gated by `app_meta.derivable_zeros_stripped` so it runs **exactly once** — a
+  zero the user deliberately records afterwards is respected. Only
+  `trip_program_entries` is swept; `program_year_adjustments` have no segments to
+  derive from, so a zero there is meaningful and is left alone.
+- **`normalizeSegmentProgramIds`** — rewrites any `trip_segments.program_id` of
+  `''` to `NULL`. Idempotent, runs unconditionally.
+
+No schema change: `trip_segments.program_id` has existed since v1.0, it simply
+had no way to be set from the UI.
+
+### Tests
+- New `tests/segment-program-tagging.test.ts` (20 tests): tagged-segment
+  derivation, a mixed Delta + AA trip splitting $400/$600 with no
+  double-counting, untagged back-compat, explicit and `null` value precedence,
+  award tickets with no cost, the `deriveSegmentCost` helper directly, the
+  one-time migration and its run-once gate, and segment `program_id` referential
+  integrity. Suite total 198, all passing.
+
 ## [1.5.1] — 2026-07-27
 
 ### Fixed
