@@ -122,8 +122,8 @@ describe('icon path resolution is a fixed, contained asset (no attacker input)',
   const packaged = { isPackaged: true, resourcesPath: '/opt/app/resources', dirname: '/opt/app/resources/app.asar/electron/dist' };
 
   it('resolves to the icon.ico filename in both dev and packaged modes', () => {
-    expect(resolveIconPath(dev).endsWith(`assets/${ICON_FILE}`)).toBe(true);
-    expect(resolveIconPath(packaged).endsWith(`assets/${ICON_FILE}`)).toBe(true);
+    expect(resolveIconPath(dev).endsWith(path.join('assets', ICON_FILE))).toBe(true);
+    expect(resolveIconPath(packaged).endsWith(path.join('assets', ICON_FILE))).toBe(true);
   });
 
   it('always stays within the expected assets directory boundary', () => {
@@ -132,7 +132,9 @@ describe('icon path resolution is a fixed, contained asset (no attacker input)',
   });
 
   it('packaged mode roots the icon under process.resourcesPath/assets', () => {
-    expect(resolveIconPath(packaged)).toBe(`/opt/app/resources/assets/${ICON_FILE}`);
+    expect(resolveIconPath(packaged)).toBe(
+      path.join('/opt/app/resources', 'assets', ICON_FILE)
+    );
   });
 
   it('the icon filename constant contains no path separators or traversal', () => {
