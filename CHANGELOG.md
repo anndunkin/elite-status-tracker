@@ -3,6 +3,31 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] — 2026-08-13
+
+### Fixed
+- **Taskbar/shortcut icon showing the generic Electron icon instead of the
+  app's custom icon.** `electron-builder.config.js` had
+  `signAndEditExecutable: false` (present since the very first v1.0.0
+  release). This flag controls whether electron-builder runs `rcedit` on
+  the packaged `.exe` — the step that actually embeds the custom icon and
+  version metadata into the executable's resources. With it `false`, that
+  step was skipped entirely, so the built `.exe`, its taskbar entry, and
+  its Start Menu/desktop shortcuts always fell back to Electron's stock
+  icon, regardless of `win.icon`, `extraResources`, `iconPath.ts`, or the
+  `BrowserWindow` `icon` option all being configured correctly (the v1.4.0
+  and v1.5.0 "icon fix" releases addressed those application-level pieces,
+  which is why the running window's in-app icon references were already
+  right — but none of that matters if rcedit never runs on the .exe
+  itself). Flipped `signAndEditExecutable` to `true`; this only controls
+  resource editing, not code signing (`forceCodeSigning: false` and no
+  configured certificate already fully disable actual signing, both
+  locally and in the `windows-latest` CI runner via `CSC_IDENTITY_AUTO_
+  DISCOVERY: false`), so there's no signing side effect from this change.
+
+### Validation
+- Full Vitest suite: 198/198 passing (unchanged).
+
 ## [1.6.1] — 2026-08-13
 
 ### Changed
