@@ -7,13 +7,13 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
+    rolldownOptions: {
       external: ['better-sqlite3', 'electron'],
     },
   },
@@ -22,16 +22,11 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    dir: './tests',
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
-    environmentMatchGlobs: [
-      ['tests/security.test.ts', 'node'],
-      ['tests/validation.test.ts', 'node'],
-      ['tests/boundary.test.ts', 'node'],
-      ['tests/functionality.test.ts', 'node'],
-    ],
     alias: [
-      { find: 'electron', replacement: path.resolve(__dirname, 'tests/__mocks__/electron.ts') },
+      { find: 'electron', replacement: path.resolve(import.meta.dirname, 'tests/__mocks__/electron.ts') },
     ],
   },
 })
