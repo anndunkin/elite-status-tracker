@@ -3,6 +3,34 @@
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] — 2026-08-13
+
+### Changed
+- Completed a full dependency modernization: Electron 43.4.0 and
+  electron-builder 26.15.3, React / React DOM 19.2.8, React Router 7.18.2,
+  Vite 8.2.1, Vitest 4.1.10, Tailwind CSS 4.3.3, TypeScript 7.0.2, and the
+  current compatible versions of the testing libraries, Vite React plugin,
+  type packages, PostCSS tooling, concurrently, and wait-on.
+- Migrated Vite configuration to native ESM and Rolldown options; updated
+  TypeScript resolution/types configuration for TypeScript 7; and migrated
+  Tailwind's PostCSS integration and stylesheet directives/utilities for
+  Tailwind 4.
+- Replaced Vitest's removed `environmentMatchGlobs` option with explicit Node
+  environment directives on the database/security suites and confined test
+  discovery to `tests/`.
+
+### Compatibility notes
+- `better-sqlite3` is intentionally on 12.11.1: version 13.x segfaults in the
+  current sandbox.
+- `jsdom` is intentionally on 29.1.1, the newest Node 20-compatible release.
+  jsdom 30 requires Node 22.22.2 or later.
+
+### Validation
+- Full Vitest suite: **198/198 passing** across six test files.
+- Production renderer/Electron build and both TypeScript project checks pass.
+- The `keyv@4.5.4` and `cacheable-request@7.0.4` security overrides were
+  re-verified after installation.
+
 ## [1.6.0] — 2026-07-29
 
 ### Added

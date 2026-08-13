@@ -53,6 +53,18 @@ npm test             # vitest (security / validation / boundary / functionality)
 npm run build        # renderer + electron main
 ```
 
+## Dependency modernization (v1.6.1)
+
+The application now uses Electron 43.4.0, React 19.2.8, React Router 7.18.2,
+Vite 8.2.1, Vitest 4.1.10, Tailwind CSS 4.3.3, and TypeScript 7.0.2. The
+toolchain migration includes the Vite/Rolldown configuration, Tailwind 4
+PostCSS/CSS configuration, and Vitest 4 test-environment configuration.
+
+`better-sqlite3` intentionally remains on the stable 12.11.1 line because
+13.x is known to segfault in the current Node 20 sandbox. `jsdom` is on
+29.1.1, the newest release compatible with the current Node 20 runtime;
+jsdom 30 requires Node 22.22.2 or later.
+
 ## Building the Windows installer
 
 ```bash
@@ -85,4 +97,3 @@ the August 2026 Keyv/Cacheable npm supply chain attack, which compromised
 These are transitive dependencies pulled in via `got` → `@electron/get` → `electron`.
 **Before removing or updating these overrides**, verify that newer versions of
 `keyv`/`cacheable-request` are confirmed clean against current npm security advisories.
-
