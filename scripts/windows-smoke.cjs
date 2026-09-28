@@ -45,8 +45,12 @@ async function launch(checkNew, seed = false) {
       assert.equal(await page.getByRole('progressbar').count(), 16);
       assert.equal(await page.getByRole('progressbar', { name: 'American AAdvantage: actual earned', exact: true }).getAttribute('aria-valuenow'), '62');
       assert.equal(await page.getByText('Projected: Platinum Pro', { exact: true }).count(), 1);
+      // Theme persists across upgrade/reinstall. Normalize before capturing
+      // each mode rather than assuming every launch starts in light mode.
+      const themeToggle = page.getByTitle('Toggle theme');
+      if (await page.evaluate(() => document.documentElement.classList.contains('dark'))) await themeToggle.click();
       await page.screenshot({ path: path.join(out, 'windows-dashboard-light.png') });
-      await page.getByRole('button', { name: /Dark/ }).click();
+      await themeToggle.click();
       await page.screenshot({ path: path.join(out, 'windows-dashboard-dark.png') });
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
       const overflow = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="status-progress-"]')].some(el => el.scrollWidth > el.clientWidth));

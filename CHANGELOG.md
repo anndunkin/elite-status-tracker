@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.7.1] - 2026-09-28
+## [1.7.2] - 2026-09-28
 
 - Two stacked dashboard bars: Actual earned toward the next actual tier, and
   Projected total across every tier using completed, booked and planned travel.
@@ -12,7 +12,9 @@
 - Windows installer/runtime, upgrade, reinstall/repair and uninstall-retention
   checks gate publication.
 - Corrects installer QA staging to honor the existing installer folder behavior.
-  The v1.7.0 release was blocked before publication by this test-path mismatch.
+  The v1.7.0 release was blocked before publication by this test-path mismatch;
+  v1.7.1 was blocked by the test assuming a reset theme after reinstall. The
+  harness now honors the application's correctly persisted theme preference.
 - Unsigned installer: no signing private key is available. Existing data and
   file-management features are unchanged.
 
