@@ -3,7 +3,7 @@
 ## Installing
 
 1. Download the latest `Elite Status Tracker Setup` installer from the release page.
-2. Run it. Version 1.7.3 is unsigned because the signing private key is unavailable.
+2. Run it. This build is unsigned because the signing private key is unavailable.
    Windows may show an unknown-publisher or SmartScreen warning. Only proceed
    after verifying that the installer came from the project's GitHub release.
 3. Choose an install location (you can change it) and finish. A desktop and Start
@@ -33,10 +33,16 @@ status values:
 - Two stacked **progress bars**. **Actual earned** uses only YTD activity and
   shows progress toward the next actual tier, with totals and requirements.
   **Projected total** includes completed, booked, and planned travel, plus the
-  existing adjustments and card earnings. It shows every tier as an evenly spaced
-  milestone, with each tier's requirements listed below in matching order.
-  Forecast qualification is labeled **Projected to meet**, never earned.
-  Both bars respect combined requirements and alternative qualification routes.
+  existing adjustments and card earnings. Tier markers are proportional to their
+  numeric thresholds, with tier names above the bar and no tier list underneath.
+  Both bars show total / target beneath them. A separate **Requires:** line is
+  included only when the target tier offers alternative qualification routes.
+  Combined requirements appear together in the total / target line.
+  For multiple-metric programs the projected bar names its primary metric, such
+  as nights or PQP; all qualification rules still determine the projected status.
+  Filling that numeric scale alone does not imply that other required metrics
+  have been met. Actual progress uses the strongest qualification route.
+  Long or crowded tier labels stagger vertically rather than overlap.
   Current held status and lifetime status do not inflate annual earned progress.
   The separate lifetime Million Miler display is unchanged.
 

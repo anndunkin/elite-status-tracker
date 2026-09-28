@@ -44,7 +44,16 @@ async function launch(checkNew, seed = false) {
       await page.getByText('Actual earned', { exact: true }).first().waitFor();
       assert.equal(await page.getByRole('progressbar').count(), 16);
       assert.equal(await page.getByRole('progressbar', { name: 'American AAdvantage: actual earned', exact: true }).getAttribute('aria-valuenow'), '62');
-      assert.equal(await page.getByText('Projected: Platinum Pro', { exact: true }).count(), 1);
+      const aa = page.getByTestId('status-progress-aa');
+      assert.equal(await aa.getByText('Next: Executive Platinum', { exact: true }).count(), 1);
+      assert.equal(await aa.getByText('175,000 / 200,000 LPs', { exact: true }).count(), 1);
+      assert.equal(await aa.getByText(/Requires:/).count(), 0);
+      assert.equal(await aa.getByRole('listitem').count(), 0);
+      assert.equal(await aa.getByTestId('tier-tick-aa-1').evaluate(e => e.style.left), '20%');
+      assert.equal(await aa.getByTestId('tier-tick-aa-2').evaluate(e => e.style.left), '37.5%');
+      assert.equal(await aa.getByTestId('tier-tick-aa-3').evaluate(e => e.style.left), '62.5%');
+      assert.equal(await aa.getByTestId('projected-fill-aa').evaluate(e => e.style.width), '87.5%');
+      assert.equal(await page.getByTestId('status-progress-hh').getByText('Requires: 10 nights OR 4 stays OR $2,500 spend', { exact: true }).count(), 2);
       // Theme persists across upgrade/reinstall. Normalize before capturing
       // each mode rather than assuming every launch starts in light mode.
       const themeToggle = page.getByTitle('Toggle theme');
@@ -77,7 +86,7 @@ function install(file) {
     install(prior); await launch(false, true);
     record('Previous-version clean install and synthetic data creation passed.');
     install(installer); await launch(true);
-    record('Upgrade from v1.6.2 preserved the database and trips.');
+    record('Upgrade from v1.7.3 preserved the database and trips.');
   } else { install(installer); await launch(true, true); record('Clean install passed.'); }
   install(installer); await launch(true);
   record('Same-version reinstall/repair preserved the database and trips.');

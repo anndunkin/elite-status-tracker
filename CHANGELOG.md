@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.0] - 2026-09-28
+
+- Implements the approved dashboard mockup: projected tier spacing is proportional
+  to numeric thresholds instead of evenly spaced by tier rank.
+- Removes the tier list. Tier names and thresholds appear above the projected bar,
+  with collision-aware label placement for narrow windows.
+- Keeps compact total / target lines beneath both bars; shows "Requires:" only for
+  alternative qualification paths, including dollar formatting for spend.
+- Multi-metric scales are explicitly labeled. Full AND/OR rules still determine
+  actual and projected status; the plotted metric alone never asserts qualification.
+- Includes completed, booked and planned travel as before. No database schema,
+  earning rules, file management or lifetime mileage behavior is changed.
+- Extends regression and packaged Windows upgrade tests for these requirements.
+- Installer remains unsigned because no signing private key is available.
+
 ## [1.7.3] - 2026-09-28
 
 - Two stacked dashboard bars: Actual earned toward the next actual tier, and

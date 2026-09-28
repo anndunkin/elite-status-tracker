@@ -25,18 +25,29 @@ export function progressPercent(fraction: number): number {
   return Math.floor(clamp(fraction) * 100);
 }
 
+/** A real numeric axis; never mix nights, dollars and points into a rank scale. */
+export function projectionScale(totals: Totals, tiers: TierLike[]) {
+  const metric = tiers[0]?.requirements[0]?.metric ?? null;
+  const thresholds = tiers.map(t => t.requirements.find(r => r.metric === metric)?.threshold);
+  if (!metric || thresholds.some(t => t === undefined || !Number.isFinite(t) || t <= 0)) return null;
+  const maximum = Math.max(...thresholds as number[]);
+  const value = Number.isFinite(totals[metric]) ? Math.max(0, totals[metric]) : 0;
+  return {
+    metric, maximum, value, fraction: clamp(value / maximum),
+    milestones: tiers.map((tier, i) => ({ tier, threshold: thresholds[i]!, fraction: thresholds[i]! / maximum })),
+  };
+}
+
 export function statusProgress(totals: Totals, inputTiers: TierLike[]) {
   const tiers = [...inputTiers].sort((a, b) => a.tier_order - b.tier_order);
   const earned = highestQualifiedTier(totals, tiers);
   const next = nextTierAbove(earned, tiers);
-  const earnedIndex = earned ? tiers.indexOf(earned) : -1;
-  // Each tier occupies one equal interval. Interpolate the next interval using
-  // its full qualification routes, not just the first metric or first route.
-  const interval = next ? requirementProgress(totals, next.requirements, earned?.requirements) : 0;
+  const scale = projectionScale(totals, tiers);
   return {
     tiers, earned, next,
     actualFraction: next ? requirementProgress(totals, next.requirements) : tiers.length ? 1 : 0,
-    projectedFraction: tiers.length ? (earnedIndex + 1 + interval) / tiers.length : 0,
+    projectedFraction: scale?.fraction ?? 0,
+    scale,
     qualified: tiers.map(t => qualifiesForTier(totals, t.requirements)),
   };
 }

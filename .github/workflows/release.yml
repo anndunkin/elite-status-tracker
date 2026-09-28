@@ -70,7 +70,7 @@ jobs:
         shell: pwsh
         run: |
           $prior = Join-Path $env:RUNNER_TEMP "previous-setup.exe"
-          Invoke-WebRequest "https://github.com/anndunkin/elite-status-tracker/releases/download/v1.6.2/Elite.Status.Tracker.Setup.1.6.2.exe" -OutFile $prior
+          Invoke-WebRequest "https://github.com/anndunkin/elite-status-tracker/releases/download/v1.7.3/Elite.Status.Tracker.Setup.1.7.3.exe" -OutFile $prior
           "PRIOR_INSTALLER=$prior" >> $env:GITHUB_ENV
 
       - name: Test Windows installer and packaged runtime
