@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.7.0] - 2026-09-28
+
+### Changed
+- Replaced the dashboard's mixed actual/projected annual gauge with two stacked bars.
+- Actual earned uses YTD totals only and targets the next actual tier. Held and
+  lifetime status never substitute for annual earning activity.
+- Projected total includes completed, booked, and planned travel plus existing
+  posted adjustments and card earnings. All tiers appear in order with requirements
+  and explicit forecast labels. Milestones are evenly spaced by tier.
+- Combined requirements use the limiting metric; alternative routes use the
+  strongest qualifying route. Near-complete values never round up to 100%.
+- The existing lifetime Million Miler gauge and program detail pages are unchanged.
+
+### Validation and maintenance
+- Added 30 regression tests for dashboard rendering, qualification boundaries,
+  multi-metric rules, safe rendering, year selection, and AA's March-February year.
+- Added Windows packaged-runtime, upgrade, reinstall/repair, uninstall/data-retention
+  checks as release gates, with screenshot evidence.
+- Updated compatible vulnerable dependencies; retained keyv/cacheable-request pins.
+- Build CI now uses Node 22 to satisfy dependency engine requirements.
+- Updated the user guide and included a synthetic-data dashboard preview.
+
+### Signing
+- This release uses the existing unsigned build configuration. No signing private
+  key is available; a certificate file alone cannot sign an installer.
+
 All notable changes to Elite Status Tracker are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 

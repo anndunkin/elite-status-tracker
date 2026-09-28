@@ -1,6 +1,6 @@
 {
   "name": "elite-status-tracker",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "description": "Desktop tracker for airline/hotel elite status across loyalty programs",
   "main": "electron/dist/main.js",
   "scripts": {
@@ -31,6 +31,7 @@
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
     "jsdom": "^29.1.1",
+    "playwright": "1.58.2",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",

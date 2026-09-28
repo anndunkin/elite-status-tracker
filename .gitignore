@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-installer/
+preview-dist/
+qa-evidence/
 electron/dist/
 *.log
 .env

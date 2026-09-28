@@ -240,7 +240,7 @@ export interface ProgramProjection {
   lifetimeStatus: ProgramLifetimeStatus | null;
   statusOverride: ProgramStatusOverride | null;
   lifetimeMileage: ProgramLifetimeMileageView | null;
-  // Progress toward next tier (headline gauge, based on projected totals).
+  // Next tier above actual YTD qualification. Dashboard uses separate actual/projected bars.
   nextTier: string | null;
   nextTierRequirements: TierRequirement[] | null;
   tiers: Array<{ tier_name: string; tier_order: number; requirements: TierRequirement[] }>;

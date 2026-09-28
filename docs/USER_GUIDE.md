@@ -2,10 +2,10 @@
 
 ## Installing
 
-1. Download `Elite Status Tracker Setup 1.2.0.exe` from the release page.
-2. Run it. Because the app is signed with a self-signed certificate, Windows
-   SmartScreen may show a "Windows protected your PC" notice — click
-   **More info → Run anyway**.
+1. Download the latest `Elite Status Tracker Setup` installer from the release page.
+2. Run it. Version 1.7.0 is unsigned because the signing private key is unavailable.
+   Windows may show an unknown-publisher or SmartScreen warning. Only proceed
+   after verifying that the installer came from the project's GitHub release.
 3. Choose an install location (you can change it) and finish. A desktop and Start
    menu shortcut are created.
 
@@ -30,8 +30,15 @@ status values:
   program-year qualifies for (completed trips + posted adjustments + card earnings).
 - **Projected** — the tier you'd reach if all your planned and booked trips
   complete as estimated.
-- A **progress bar** toward the next tier, with the running totals and the
-  requirement for that tier.
+- Two stacked **progress bars**. **Actual earned** uses only YTD activity and
+  shows progress toward the next actual tier, with totals and requirements.
+  **Projected total** includes completed, booked, and planned travel, plus the
+  existing adjustments and card earnings. It shows every tier as an evenly spaced
+  milestone, with each tier's requirements listed below in matching order.
+  Forecast qualification is labeled **Projected to meet**, never earned.
+  Both bars respect combined requirements and alternative qualification routes.
+  Current held status and lifetime status do not inflate annual earned progress.
+  The separate lifetime Million Miler display is unchanged.
 
 **Click any card** to open its **Program Detail** page — a full breakdown of the
 metric totals behind each status value, the trips crediting toward the program

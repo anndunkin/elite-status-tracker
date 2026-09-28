@@ -1,33 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { ProgramProjection, TierRequirement, TripWithDetails } from '../../electron/types';
+import type { ProgramProjection, TripWithDetails } from '../../electron/types';
 import { selectDashboardTrips } from '../../electron/rules';
 import { displayMetricKey } from '../lib/metricLabels';
-
-function reqLabel(reqs: TierRequirement[], programId?: string): string {
-  const groups = new Map<number, TierRequirement[]>();
-  for (const r of reqs) {
-    const k = r.group ?? 0;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k)!.push(r);
-  }
-  return [...groups.values()]
-    .map(g => g.map(r => `${r.threshold.toLocaleString()} ${displayMetricKey(programId, r.metric)}`).join(' + '))
-    .join('  OR  ');
-}
-
-function progressToNext(p: ProgramProjection): { pct: number; text: string } | null {
-  if (!p.nextTierRequirements?.length) return null;
-  const primary = p.nextTierRequirements.filter(r => (r.group ?? 0) === (p.nextTierRequirements![0].group ?? 0));
-  const parts = primary.map(r => {
-    const have = p.projectedTotals[r.metric] ?? 0;
-    return { metric: r.metric, have, need: r.threshold };
-  });
-  const lead = parts[0];
-  const pct = Math.min(100, Math.round((lead.have / lead.need) * 100));
-  const text = parts.map(x => `${x.have.toLocaleString()} / ${x.need.toLocaleString()} ${displayMetricKey(p.program.id, x.metric)}`).join(', ');
-  return { pct, text };
-}
+import StatusProgress from '../components/StatusProgress';
 
 function totalsText(totals: Record<string, number>, programId?: string): string {
   const keys = Object.keys(totals);
@@ -170,7 +146,6 @@ export default function Dashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {rows.map(p => {
-          const prog = progressToNext(p);
           const lm = p.lifetimeMileage;
           const lmPct = lm && lm.nextMilestone
             ? Math.min(100, Math.round((lm.currentMiles / lm.nextMilestone.threshold) * 100)) : 0;
@@ -222,27 +197,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {p.nextTier ? (
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-500">Next: <b>{p.nextTier}</b></span>
-                    {prog && <span className="text-slate-400">{prog.pct}%</span>}
-                  </div>
-                  {prog && (
-                    <>
-                      <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                        <div className="h-full bg-primary-600" style={{ width: `${prog.pct}%` }} />
-                      </div>
-                      <p className="mt-1 text-[11px] text-slate-400">{prog.text}</p>
-                    </>
-                  )}
-                  {p.nextTierRequirements && (
-                    <p className="mt-1 text-[11px] text-slate-400">Requires: {reqLabel(p.nextTierRequirements, p.program.id)}</p>
-                  )}
-                </div>
-              ) : (
-                <p className="mt-3 text-xs font-medium text-emerald-600">Top tier reached 🎉</p>
-              )}
+              <StatusProgress projection={p} />
             </button>
           );
         })}
