@@ -6,10 +6,16 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const out = path.resolve('qa-evidence');
 fs.mkdirSync(out, { recursive: true });
-const installDir = path.join(process.env.RUNNER_TEMP, 'elite-status-qa');
+// installer.nsh sets $INSTDIR from $EXEDIR during customInit. Stage both
+// versions beside the SAME directory instead of assuming /D overrides it.
+const stagingDir = path.join(process.env.RUNNER_TEMP, 'elite-status-installer-test');
+fs.mkdirSync(stagingDir, { recursive: true });
+const installDir = path.join(stagingDir, 'Elite Status Tracker');
 const executablePath = path.join(installDir, 'Elite Status Tracker.exe');
-const installer = path.resolve('dist-installer', fs.readdirSync('dist-installer').find(n => n.endsWith('.exe')));
-const prior = process.env.PRIOR_INSTALLER;
+const installer = path.join(stagingDir, 'current-setup.exe');
+fs.copyFileSync(path.resolve('dist-installer', fs.readdirSync('dist-installer').find(n => n.endsWith('.exe'))), installer);
+const prior = process.env.PRIOR_INSTALLER ? path.join(stagingDir, 'previous-setup.exe') : null;
+if (prior) fs.copyFileSync(process.env.PRIOR_INSTALLER, prior);
 const report = [];
 const record = message => { report.push(message); console.log(message); };
 let dbPath;
@@ -56,7 +62,7 @@ async function launch(checkNew, seed = false) {
   } finally { await app.close(); app = null; }
 }
 function install(file) {
-  execFileSync(file, ['/S', `/D=${installDir}`], { timeout: 180000 });
+  execFileSync(file, ['/S'], { timeout: 180000 });
   assert(fs.existsSync(executablePath));
 }
 (async () => {

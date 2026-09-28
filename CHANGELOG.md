@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.1] - 2026-09-28
+
+- Two stacked dashboard bars: Actual earned toward the next actual tier, and
+  Projected total across every tier using completed, booked and planned travel.
+- Forecast milestones are explicitly labeled "Projected to meet"; they never
+  imply that actual earnings have reached a goal.
+- AND/OR qualification routes, exact boundaries and AA program-year behavior
+  are covered by the 228-test suite.
+- Compatible dependency security patches applied; protected overrides retained.
+- Windows installer/runtime, upgrade, reinstall/repair and uninstall-retention
+  checks gate publication.
+- Corrects installer QA staging to honor the existing installer folder behavior.
+  The v1.7.0 release was blocked before publication by this test-path mismatch.
+- Unsigned installer: no signing private key is available. Existing data and
+  file-management features are unchanged.
+
 ## [1.7.0] - 2026-09-28
 
 ### Changed
