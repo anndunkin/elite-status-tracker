@@ -94,6 +94,11 @@ export default function StatusProgress({ projection: p }: { projection: ProgramP
   const actual = statusProgress(p.ytdTotals, p.tiers);
   const projected = statusProgress(p.projectedTotals, p.tiers);
   if (!actual.tiers.length) return <p className="mt-3 text-xs text-slate-500">No tier rules available.</p>;
+  // Annual qualification only: held, lifetime and forecast status do not count.
+  if (actual.earned && !actual.next && requirementProgress(p.ytdTotals, actual.earned.requirements) === 1) {
+    return <p className="mt-3 text-xs font-medium text-emerald-600"
+      data-testid={`top-status-${p.program.id}`}>Top status achieved 🎉</p>;
+  }
   const actualTarget = actual.next ?? actual.earned;
   const projectedTarget = projected.next ?? projected.earned;
   const actualReqs = actualTarget?.requirements ?? [];

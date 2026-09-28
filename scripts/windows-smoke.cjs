@@ -35,6 +35,9 @@ async function launch(checkNew, seed = false) {
           entries: [{ program_id: 'aa', is_estimate: false, metric_values: { points: 25000 } }] });
         await window.api.trips.create({ label: 'Installer QA forecast', start_date: `${year}-10-01`, status: 'planned',
           entries: [{ program_id: 'aa', is_estimate: true, metric_values: { points: 150000 } }] });
+        await window.api.trips.create({ label: 'Installer QA top status', start_date: `${year}-04-01`, status: 'completed',
+          entries: [{ program_id: 'dl', is_estimate: false, metric_values: { mqd: 30000 } }] });
+        await window.api.lifetime.setStatus({ program_id: 'dl', tier_name: 'Platinum', achieved_date: null, notes: null });
       });
     } else {
       assert((await page.evaluate(() => window.api.trips.getAll())).some(t => t.label === 'Installer QA retention'));
@@ -42,7 +45,12 @@ async function launch(checkNew, seed = false) {
     if (checkNew) {
       await page.reload();
       await page.getByText('Actual earned', { exact: true }).first().waitFor();
-      assert.equal(await page.getByRole('progressbar').count(), 16);
+      assert.equal(await page.getByRole('progressbar').count(), 14);
+      assert.equal(await page.getByTestId('top-status-dl').textContent(), 'Top status achieved 🎉');
+      assert.equal(await page.getByTestId('status-progress-dl').count(), 0);
+      const delta = page.getByRole('button', { name: /Delta SkyMiles AIRLINE/i });
+      assert.equal(await delta.getByText('★ Lifetime Platinum', { exact: true }).count(), 1);
+      assert.equal(await delta.getByText('30,000 mqd', { exact: true }).count(), 2);
       assert.equal(await page.getByRole('progressbar', { name: 'American AAdvantage: actual earned', exact: true }).getAttribute('aria-valuenow'), '62');
       const aa = page.getByTestId('status-progress-aa');
       assert.equal(await aa.getByText('Next: Executive Platinum', { exact: true }).count(), 1);
@@ -79,7 +87,7 @@ async function launch(checkNew, seed = false) {
       const prefs = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences());
       assert.equal(prefs.contextIsolation, true);
       assert.equal(prefs.nodeIntegration, false);
-      record('Packaged runtime: dual bars, forecast separation, navigation, minimum window size, and renderer isolation passed.');
+      record('Packaged runtime: top-status celebration, lifetime badge and totals retained, remaining dual bars, forecast separation, navigation, minimum window size, and renderer isolation passed.');
     }
   } catch (error) {
     const page = await app.firstWindow();
@@ -100,7 +108,7 @@ function install(file) {
     install(prior); await launch(false, true);
     record('Previous-version clean install and synthetic data creation passed.');
     install(installer); await launch(true);
-    record('Upgrade from v1.7.3 preserved the database and trips.');
+    record('Upgrade from v1.8.1 preserved the database and trips.');
   } else { install(installer); await launch(true, true); record('Clean install passed.'); }
   install(installer); await launch(true);
   record('Same-version reinstall/repair preserved the database and trips.');

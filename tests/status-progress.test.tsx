@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import StatusProgress from '../src/components/StatusProgress';
 import Dashboard from '../src/pages/Dashboard';
@@ -52,16 +52,72 @@ describe('dashboard dual progress', () => {
     render(<StatusProgress projection={p} />);
     expect(screen.getByText('Next: Gold · 50%')).toBeInTheDocument();
   });
-  it('retains both bars after actual top tier is earned', () => {
-    const p = fixture(); p.ytdTotals.nights = 60;
+  it.each([50, 60])('replaces both annual bars at or above top tier: %s', nights => {
+    const p = fixture(); p.ytdTotals.nights = nights;
     render(<StatusProgress projection={p} />);
-    expect(screen.getByText('Top tier earned')).toBeInTheDocument();
+    expect(screen.getByText('Top status achieved 🎉')).toHaveClass('mt-3', 'text-xs', 'font-medium', 'text-emerald-600');
+    expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
+    expect(screen.queryByText('Actual earned')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Projected total/)).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId(/tier-label-/)).toHaveLength(0);
+  });
+  it.each([49.999, 0, NaN, Infinity])('never celebrates incomplete or invalid actual earnings: %s', nights => {
+    const p = fixture(); p.ytdTotals.nights = nights; p.projectedTotals.nights = 100;
+    render(<StatusProgress projection={p} />);
+    expect(screen.queryByText('Top status achieved 🎉')).not.toBeInTheDocument();
     expect(screen.getAllByRole('progressbar')).toHaveLength(2);
+  });
+  it('requires every AND condition, but accepts any complete OR route', () => {
+    const p = fixture();
+    p.tiers = [{ tier_name: 'Top', tier_order: 1, requirements: [
+      { metric: 'nights', threshold: 50, group: 0 },
+      { metric: 'spend', threshold: 10000, group: 0 },
+      { metric: 'points', threshold: 100000, group: 1 },
+    ] }];
+    p.ytdTotals = { nights: 50, spend: 9999 };
+    const { rerender } = render(<StatusProgress projection={p} />);
+    expect(screen.queryByText('Top status achieved 🎉')).not.toBeInTheDocument();
+    p.ytdTotals = { points: 100000 };
+    rerender(<StatusProgress projection={p} />);
+    expect(screen.getByText('Top status achieved 🎉')).toBeInTheDocument();
+    p.ytdTotals = { nights: 50, spend: 10000 };
+    rerender(<StatusProgress projection={p} />);
+    expect(screen.getByText('Top status achieved 🎉')).toBeInTheDocument();
+    p.ytdTotals = { nights: 49, spend: 10000 };
+    rerender(<StatusProgress projection={p} />);
+    expect(screen.queryByText('Top status achieved 🎉')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('progressbar')).toHaveLength(2);
+  });
+  it('preserves dashboard styling, status rows, lifetime badge and mileage gauge', async () => {
+    const p = fixture();
+    p.ytdTotals = { nights: 50 }; p.projectedTotals = { nights: 60 };
+    p.ytdTier = 'Diamond'; p.projectedTier = 'Diamond';
+    p.lifetimeStatus = { program_id: 'demo', tier_name: 'Platinum', achieved_date: null, notes: null };
+    p.lifetimeMileage = {
+      program_id: 'demo', baseline_miles: 2100000, baseline_date: '2026-01-01',
+      milestones: [{ label: '3,000,000 Miler', threshold: 3000000 }],
+      accruedSinceBaseline: 0, currentMiles: 2100000,
+      nextMilestone: { label: '3,000,000 Miler', threshold: 3000000 }, milesToNext: 900000,
+    };
+    window.api = { projection: { all: vi.fn().mockResolvedValue([p]) },
+      trips: { getAll: vi.fn().mockResolvedValue([]) } } as unknown as typeof window.api;
+    const { container } = render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    expect(await screen.findByText('Top status achieved 🎉')).toBeInTheDocument();
+    const card = screen.getByRole('button', { name: /Test Hotel HOTEL/i });
+    expect(screen.getByText('★ Lifetime Platinum')).toBeInTheDocument();
+    for (const label of ['Current', 'YTD', 'Projected', '50 nights', '60 nights',
+      'Million Miler (lifetime)', '2,100,000 mi', '900,000 mi to 3,000,000 Miler']) {
+      expect(within(card).getByText(label)).toBeInTheDocument();
+    }
+    expect(container.querySelector('.bg-amber-500')).toHaveStyle({ width: '70%' });
+    expect(screen.getByRole('button', { name: /Test Hotel HOTEL/i })).toHaveClass('card', 'p-4');
+    expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
   });
   it('renders missing rules without a false top-tier claim', () => {
     const p = fixture(); p.tiers = [];
     render(<StatusProgress projection={p} />);
     expect(screen.getByText('No tier rules available.')).toBeInTheDocument();
+    expect(screen.queryByText('Top status achieved 🎉')).not.toBeInTheDocument();
     expect(screen.queryByText('Top tier earned')).not.toBeInTheDocument();
   });
   it('escapes rule names instead of interpreting markup', () => {

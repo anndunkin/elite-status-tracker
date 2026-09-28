@@ -10,7 +10,7 @@ import '../src/index.css';
 // Preview-only synthetic examples; never included in the desktop build.
 const metrics: Record<string, [Record<string, number>, Record<string, number>]> = {
   aa: [{ points: 25000 }, { points: 175000 }],
-  dl: [{ mqd: 7200 }, { mqd: 29000 }],
+  dl: [{ mqd: 30000 }, { mqd: 35000 }],
   as: [{ points: 5000 }, { points: 85000 }],
   ua: [{ pqp: 6000, pqf: 8 }, { pqp: 17000, pqf: 44 }],
   hh: [{ nights: 8 }, { nights: 65 }],
@@ -28,8 +28,16 @@ const rows = SEED_PROGRAMS.filter(p => p.is_active).map(program => {
     program_year: 2026, currentTotals: actualTotals, ytdTotals: actualTotals, projectedTotals,
     currentTier: a.earned?.tier_name ?? null, ytdTier: a.earned?.tier_name ?? null,
     projectedTier: p.earned?.tier_name ?? null, heldTier: null, heldFromYear: null,
-    heldTotals: {}, currentStatusTier: null, lifetimeTier: null, overrideTier: null,
-    lifetimeStatus: null, lifetimeMileage: null, statusOverride: null,
+    heldTotals: {}, currentStatusTier: program.id === 'dl' ? 'Diamond' : null,
+    lifetimeTier: program.id === 'dl' ? 'Platinum' : null, overrideTier: null,
+    lifetimeStatus: program.id === 'dl'
+      ? { program_id: 'dl', tier_name: 'Platinum', achieved_date: null, notes: null } : null,
+    lifetimeMileage: program.id === 'dl' ? {
+      program_id: 'dl', baseline_miles: 2100000, baseline_date: '2026-01-01',
+      milestones: [{ label: '3,000,000 Miler', threshold: 3000000 }],
+      accruedSinceBaseline: 0, currentMiles: 2100000,
+      nextMilestone: { label: '3,000,000 Miler', threshold: 3000000 }, milesToNext: 900000,
+    } : null, statusOverride: null,
     nextTier: a.next?.tier_name ?? null, nextTierRequirements: a.next?.requirements ?? null,
     tiers, metricSourceBreakdown: {},
   } satisfies ProgramProjection;

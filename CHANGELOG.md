@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.8.2] - 2026-09-28
+
+- Replaces both annual dashboard bars with "Top status achieved 🎉" once actual
+  annual earnings satisfy the top tier. Forecast, held and lifetime status alone
+  do not trigger the celebration.
+- Preserves the exact existing card styling, Current/YTD/Projected badges and
+  totals, lifetime status badge and separate Million Miler gauge.
+- Keeps both approved bars unchanged for programs still earning toward top status.
+- Adds threshold, AND/OR qualification, lifetime preservation and Windows runtime
+  regressions; tests upgrade from v1.8.1 and the existing installer lifecycle.
+- No database schema, earning rules, or file-management changes.
+- Patches the transitive Undici dependency to address its WebSocket denial-of-service
+  advisory; protected dependency overrides are retained.
+- Installer remains unsigned because no signing private key is available.
+
 ## [1.8.1] - 2026-09-28
 
 - Implements the approved dashboard mockup: projected tier spacing is proportional
