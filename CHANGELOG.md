@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.7.2] - 2026-09-28
+## [1.7.3] - 2026-09-28
 
 - Two stacked dashboard bars: Actual earned toward the next actual tier, and
   Projected total across every tier using completed, booked and planned travel.
@@ -9,6 +9,8 @@
 - AND/OR qualification routes, exact boundaries and AA program-year behavior
   are covered by the 228-test suite.
 - Compatible dependency security patches applied; protected overrides retained.
+- Header wraps at the minimum desktop window size so theme controls stay visible;
+  program card content aligns to the top.
 - Windows installer/runtime, upgrade, reinstall/repair and uninstall-retention
   checks gate publication.
 - Corrects installer QA staging to honor the existing installer folder behavior.

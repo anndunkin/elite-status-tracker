@@ -153,7 +153,7 @@ export default function Dashboard() {
             <button
               key={p.program.id}
               onClick={() => navigate(`/programs/${p.program.id}`)}
-              className="card p-4 text-left hover:ring-2 hover:ring-primary-500 transition focus:outline-none focus:ring-2 focus:ring-primary-500">
+              className="card flex flex-col p-4 text-left hover:ring-2 hover:ring-primary-500 transition focus:outline-none focus:ring-2 focus:ring-primary-500">
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="font-semibold">{p.program.name}</h2>

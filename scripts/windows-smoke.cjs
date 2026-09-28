@@ -55,6 +55,9 @@ async function launch(checkNew, seed = false) {
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
       const overflow = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="status-progress-"]')].some(el => el.scrollWidth > el.clientWidth));
       assert.equal(overflow, false);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await themeToggle.click();
+      await themeToggle.click();
       await page.screenshot({ path: path.join(out, 'windows-dashboard-small.png') });
       await page.getByRole('button', { name: /American AAdvantage AIRLINE/i }).click();
       await page.getByRole('heading', { name: 'American AAdvantage' }).waitFor();

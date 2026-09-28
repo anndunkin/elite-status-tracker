@@ -27,12 +27,12 @@ function Shell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3">
-        <div className="flex items-center gap-2">
+      <header className="flex flex-wrap items-center gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-3">
+        <div className="flex shrink-0 items-center gap-2">
           <span className="text-lg font-bold text-primary-600">✈</span>
           <span className="text-lg font-bold">Elite Status Tracker</span>
         </div>
-        <nav className="flex gap-1">
+        <nav className="flex flex-wrap gap-1">
           {NAV.map(n => (
             <NavLink
               key={n.to}
@@ -50,7 +50,7 @@ function Shell() {
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <span className="hidden md:inline text-xs text-slate-400 max-w-xs truncate" title={dbPath}>{dbPath}</span>
           <button className="btn-ghost" onClick={toggle} title="Toggle theme">
             {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
