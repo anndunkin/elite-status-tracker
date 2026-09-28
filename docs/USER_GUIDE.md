@@ -3,7 +3,7 @@
 ## Installing
 
 1. Download the latest `Elite Status Tracker Setup` installer from the release page.
-2. Run it. Version 1.7.0 is unsigned because the signing private key is unavailable.
+2. Run it. Version 1.7.3 is unsigned because the signing private key is unavailable.
    Windows may show an unknown-publisher or SmartScreen warning. Only proceed
    after verifying that the installer came from the project's GitHub release.
 3. Choose an install location (you can change it) and finish. A desktop and Start
