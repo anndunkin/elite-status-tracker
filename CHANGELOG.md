@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.8.0] - 2026-09-28
+## [1.8.1] - 2026-09-28
 
 - Implements the approved dashboard mockup: projected tier spacing is proportional
   to numeric thresholds instead of evenly spaced by tier rank.
@@ -13,6 +13,9 @@
 - Includes completed, booked and planned travel as before. No database schema,
   earning rules, file management or lifetime mileage behavior is changed.
 - Extends regression and packaged Windows upgrade tests for these requirements.
+- Windows layout validation waits for responsive labels to settle after native
+  window resizing. The v1.8.0 release was blocked before publication by that
+  transient-state check.
 - Installer remains unsigned because no signing private key is available.
 
 ## [1.7.3] - 2026-09-28

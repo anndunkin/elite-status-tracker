@@ -62,6 +62,12 @@ async function launch(checkNew, seed = false) {
       await themeToggle.click();
       await page.screenshot({ path: path.join(out, 'windows-dashboard-dark.png'), animations: 'disabled' });
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(960, 640));
+      // Native resizing is asynchronous; ResizeObserver positions the tier labels
+      // on the following renderer layout. Assert the settled state, not that
+      // transient frame with labels positioned for the previous window width.
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('[data-testid^="status-progress-"]')].every(el => el.scrollWidth <= el.clientWidth),
+      null, { timeout: 10000 });
       const overflow = await page.evaluate(() => [...document.querySelectorAll('[data-testid^="status-progress-"]')].some(el => el.scrollWidth > el.clientWidth));
       assert.equal(overflow, false);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -75,6 +81,14 @@ async function launch(checkNew, seed = false) {
       assert.equal(prefs.nodeIntegration, false);
       record('Packaged runtime: dual bars, forecast separation, navigation, minimum window size, and renderer isolation passed.');
     }
+  } catch (error) {
+    const page = await app.firstWindow();
+    await page.screenshot({ path: path.join(out, 'windows-failure.png'), animations: 'disabled' }).catch(() => {});
+    console.error('Layout diagnostics:', await page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid^="status-progress-"]')].map(el => ({
+        id: el.getAttribute('data-testid'), width: el.clientWidth, scrollWidth: el.scrollWidth,
+      }))).catch(() => []));
+    throw error;
   } finally { await app.close(); app = null; }
 }
 function install(file) {
